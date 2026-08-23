@@ -408,6 +408,8 @@ type
 
 implementation
 
+{$R CPaskal.ResData.res}
+
 { TCPZigBuild }
 
 constructor TCPZigBuild.Create();
