@@ -1,8 +1,11 @@
 ﻿<Project xmlns="http://schemas.microsoft.com/developer/msbuild/2003">
     <PropertyGroup>
-        <ProjectGuid>{A61E9421-15CA-4458-B64B-43A8C2DD7A6E}</ProjectGuid>
+        <ProjectGuid>{9A2B5F2D-80BE-48D9-ACCD-6A57FFBC5EEE}</ProjectGuid>
     </PropertyGroup>
     <ItemGroup>
+        <Projects Include="CPAS\cpas.dproj">
+            <Dependencies/>
+        </Projects>
         <Projects Include="Testbed\Testbed.dproj">
             <Dependencies/>
         </Projects>
@@ -14,6 +17,15 @@
             <Default.Personality/>
         </BorlandProject>
     </ProjectExtensions>
+    <Target Name="cpas">
+        <MSBuild Projects="CPAS\cpas.dproj"/>
+    </Target>
+    <Target Name="cpas:Clean">
+        <MSBuild Projects="CPAS\cpas.dproj" Targets="Clean"/>
+    </Target>
+    <Target Name="cpas:Make">
+        <MSBuild Projects="CPAS\cpas.dproj" Targets="Make"/>
+    </Target>
     <Target Name="Testbed">
         <MSBuild Projects="Testbed\Testbed.dproj"/>
     </Target>
@@ -24,13 +36,13 @@
         <MSBuild Projects="Testbed\Testbed.dproj" Targets="Make"/>
     </Target>
     <Target Name="Build">
-        <CallTarget Targets="Testbed"/>
+        <CallTarget Targets="cpas;Testbed"/>
     </Target>
     <Target Name="Clean">
-        <CallTarget Targets="Testbed:Clean"/>
+        <CallTarget Targets="cpas:Clean;Testbed:Clean"/>
     </Target>
     <Target Name="Make">
-        <CallTarget Targets="Testbed:Make"/>
+        <CallTarget Targets="cpas:Make;Testbed:Make"/>
     </Target>
     <Import Project="$(BDS)\Bin\CodeGear.Group.Targets" Condition="Exists('$(BDS)\Bin\CodeGear.Group.Targets')"/>
 </Project>

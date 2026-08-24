@@ -89,3 +89,7 @@ checkpoint.yml
 checkpoint.zip
 checkpoint_base.zip
 distro.yml
+/bin/output
+/bin/res/zig
+bin/cpas.txt
+bin/build.toml

@@ -65,9 +65,9 @@ const
   { Build constants }
   CP_BREAKPOINT_EXT        = '.bp';
   CP_RESOLVEPATH_BEHAVIOR  = 1;
-  CP_DEFAULT_TOOLCHAIN_PATH = 'res';
+  CP_DEFAULT_TOOLCHAIN_PATH = '$P:res';
   CP_DEFAULT_TARGET        = 'x86_64-windows-gnu';
-  CP_DEFAULT_PROJECT_NAME  = 'myproject';
+  CP_DEFAULT_PROJECT_NAME  = 'output';
 
   { Language standard flags }
   // Sources are grouped by extension: .c compiles as C, everything else as
@@ -465,17 +465,8 @@ begin
       CP_DEFAULT_TOOLCHAIN_PATH);
   end;
 
-  // Resolve the toolchain path: empty means the executable's own directory
-  if FToolchainPath = '' then
-    FToolchainPath := TPath.GetDirectoryName(ParamStr(0))
-  else
-  begin
-    if not TPath.IsPathRooted(FToolchainPath) then
-      FToolchainPath := TPath.Combine(
-        TPath.GetDirectoryName(ParamStr(0)), FToolchainPath);
-    // Normalize (resolve any '..' segments)
-    FToolchainPath := TPath.GetFullPath(FToolchainPath);
-  end;
+  // Resolve the toolchain path via TUtils.ResolvePath ($P: prefix supported)
+  FToolchainPath := TUtils.ResolvePath(FToolchainPath);
 end;
 
 destructor TCPZigBuild.Destroy();
@@ -2461,15 +2452,9 @@ end;
 procedure TCPZigBuild.SetToolchainPath(const APath: string);
 begin
   if APath = '' then
-    FToolchainPath := TPath.GetDirectoryName(ParamStr(0))
+    FToolchainPath := TUtils.ResolvePath(CP_DEFAULT_TOOLCHAIN_PATH)
   else
-  begin
-    if not TPath.IsPathRooted(APath) then
-      FToolchainPath := TPath.Combine(
-        TPath.GetDirectoryName(ParamStr(0)), APath)
-    else
-      FToolchainPath := APath;
-  end;
+    FToolchainPath := TUtils.ResolvePath(APath);
 
   // Persist the raw value (empty or user-provided)
   FBuildConfig.SetString('build.toolchain_path', APath);

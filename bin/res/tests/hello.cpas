@@ -1,0 +1,20 @@
+/*******************************************************************************
+  CPaskal™ Programming Language
+
+  Copyright © 2026-present tinyBigGAMES™ LLC
+  All Rights Reserved.
+
+  https://cpaskal.org
+
+  See LICENSE for license information
+ -------------------------------------------------------------------------------
+  hello.cpas
+
+  Hello world - first end-to-end compilation test.
+*******************************************************************************/
+
+module exe hello;
+
+begin
+  println("Hello, {}! 🚀🔥✨", "CPaskal");
+end.

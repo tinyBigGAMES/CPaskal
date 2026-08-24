@@ -220,6 +220,7 @@ begin
   AddKeyword('finalize',     tkFinalize,     tcKeyword);
   AddKeyword('finally',      tkFinally,      tcKeyword);
   AddKeyword('for',          tkFor,          tcKeyword);
+  AddKeyword('forward',      tkForward,      tcKeyword);
   AddKeyword('freemem',      tkFreeMem,      tcKeyword);
   AddKeyword('getmem',       tkGetMem,       tcKeyword);
   AddKeyword('guard',        tkGuard,        tcKeyword);

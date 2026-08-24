@@ -95,6 +95,7 @@ type
     tkFinalize,
     tkFinally,
     tkFor,
+    tkForward,
     tkFreeMem,
     tkGetMem,
     tkGuard,

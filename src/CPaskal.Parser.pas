@@ -89,6 +89,7 @@ type
     function DoParseTypeDecl(const AIsPublic: Boolean): TCPTypeDeclNode;
     function DoParseVarDecl(const AIsPublic: Boolean): TCPVarDeclNode;
     function DoParseRoutineDecl(const AIsPublic: Boolean): TCPRoutineDeclNode;
+    function DoParseForwardDecl(): TCPASTNode;
     procedure DoParseFormalParams(const ARoutine: TCPRoutineDeclNode);
     function DoParseParamDecl(): TCPParamDeclNode;
     procedure DoParseRoutineBody(const ARoutine: TCPRoutineDeclNode);
@@ -142,6 +143,7 @@ type
     destructor Destroy(); override;
 
     function ParseModule(const AFilename: string; const AMasterAST: TCPMasterAST): TCPModuleNode;
+    procedure SetErrors(const AErrors: TErrors); override;
     procedure SetStatusCallback(const ACallback: TStatusCallback; const AUserData: Pointer = nil); override;
 
     property Lexer: TCPLexer read FLexer;
@@ -164,6 +166,13 @@ begin
   FLexer.Free();
 
   inherited;
+end;
+
+procedure TCPParser.SetErrors(const AErrors: TErrors);
+begin
+  inherited;
+
+  FLexer.SetErrors(AErrors);
 end;
 
 procedure TCPParser.SetStatusCallback(const ACallback: TStatusCallback; const AUserData: Pointer);
@@ -525,6 +534,10 @@ begin
     begin
       AModule.Declarations.Add(DoParseRoutineDecl(LIsPublic));
     end
+    else if Check(tkForward) then
+    begin
+      AModule.Declarations.Add(DoParseForwardDecl());
+    end
     else if Current().Kind = tkDirective then
     begin
       // Statement-level directives within declarations
@@ -752,6 +765,109 @@ begin
   end
   else
     DoParseRoutineBody(Result);
+end;
+
+function TCPParser.DoParseForwardDecl(): TCPASTNode;
+var
+  LForwardType: TCPForwardTypeDeclNode;
+  LForwardRoutine: TCPForwardRoutineDeclNode;
+begin
+  Result := nil;
+  Expect(tkForward);
+
+  if Check(tkType) then
+  begin
+    // forward type TFoo;
+    Consume();
+    LForwardType := TCPForwardTypeDeclNode.Create();
+    LForwardType.Location := Current().Location;
+
+    if Current().Kind <> tkIdentifier then
+    begin
+      FErrors.Add(Current().Location, esError, CP_ERR_PAR_008,
+        'Expected type name after forward type');
+      LForwardType.Free();
+      Exit;
+    end;
+    LForwardType.DeclName := Current().TokenText;
+    Consume();
+    Expect(tkSemicolon);
+    Result := LForwardType;
+  end
+  else if Check(tkRoutine) then
+  begin
+    // forward routine Foo(params): ReturnType;
+    Consume();
+    LForwardRoutine := TCPForwardRoutineDeclNode.Create();
+    LForwardRoutine.Location := Current().Location;
+
+    // Optional linkage spec
+    if Check(tkCLink) then
+    begin
+      LForwardRoutine.Linkage := lkCLink;
+      Consume();
+    end
+    else if Check(tkCppLink) then
+    begin
+      LForwardRoutine.Linkage := lkCppLink;
+      Consume();
+    end;
+
+    // Routine name
+    if Current().Kind <> tkIdentifier then
+    begin
+      FErrors.Add(Current().Location, esError, CP_ERR_PAR_008,
+        'Expected routine name after forward routine');
+      LForwardRoutine.Free();
+      Exit;
+    end;
+    LForwardRoutine.DeclName := Current().TokenText;
+    Consume();
+
+    // Optional formal parameters
+    if Check(tkLParen) then
+    begin
+      Expect(tkLParen);
+
+      if not Check(tkRParen) then
+      begin
+        // Lone ellipsis
+        if Check(tkEllipsis) then
+        begin
+          LForwardRoutine.IsVariadic := True;
+          Consume();
+        end
+        else
+        begin
+          LForwardRoutine.Params.Add(DoParseParamDecl());
+          while Match(tkSemicolon) do
+          begin
+            if Check(tkEllipsis) then
+            begin
+              LForwardRoutine.IsVariadic := True;
+              Consume();
+              Break;
+            end;
+            LForwardRoutine.Params.Add(DoParseParamDecl());
+          end;
+        end;
+      end;
+
+      Expect(tkRParen);
+    end;
+
+    // Optional return type
+    if Match(tkColon) then
+      LForwardRoutine.ReturnType := DoParseTypeExpr();
+
+    Expect(tkSemicolon);
+    Result := LForwardRoutine;
+  end
+  else
+  begin
+    FErrors.Add(Current().Location, esError, CP_ERR_PAR_001,
+      'Expected "type" or "routine" after "forward"');
+  end;
 end;
 
 procedure TCPParser.DoParseFormalParams(const ARoutine: TCPRoutineDeclNode);
@@ -1193,6 +1309,7 @@ begin
   begin
     // Primitive type: int32, float64, string, etc.
     LRef.TokenKind := Current().Kind;
+    LRef.CppTypeText := FLexer.GetCppType(Current().Kind);
     LRef.QualParts := [Current().TokenText];
     Consume();
   end

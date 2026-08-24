@@ -49,6 +49,8 @@ type
   TCPTypeDeclNode = class;
   TCPVarDeclNode = class;
   TCPRoutineDeclNode = class;
+  TCPForwardTypeDeclNode = class;
+  TCPForwardRoutineDeclNode = class;
   TCPParamDeclNode = class;
   TCPRecordTypeNode = class;
   TCPOverlayTypeNode = class;
@@ -151,6 +153,9 @@ type
     boSub,              // -
     boOr,               // or
     boXor,              // xor
+    // Logical (disambiguated by semantics from bitwise boAnd/boOr)
+    boLogicalAnd,       // and (when both operands are boolean)
+    boLogicalOr,        // or  (when both operands are boolean)
     // Relational (precedence 4)
     boEq,               // =
     boNotEq,            // <>
@@ -344,6 +349,36 @@ type
     property Body: TObjectList<TCPASTNode> read FBody;
   end;
 
+  { TCPForwardTypeDeclNode }
+  // Forward type declaration: forward type TFoo;
+  // Only valid in pointer-to contexts until full definition is seen
+  TCPForwardTypeDeclNode = class(TCPDeclNode)
+  protected
+    FResolvedDecl: TCPASTNode;   // populated by semantic pass -- points to full type decl
+  public
+    property ResolvedDecl: TCPASTNode read FResolvedDecl write FResolvedDecl;
+  end;
+
+  { TCPForwardRoutineDeclNode }
+  // Forward routine declaration: forward routine Foo(x: int32): int32;
+  // Carries full signature so calls are valid immediately
+  TCPForwardRoutineDeclNode = class(TCPDeclNode)
+  protected
+    FLinkage: TCPLinkage;
+    FParams: TObjectList<TCPParamDeclNode>;
+    FReturnType: TCPASTNode;
+    FIsVariadic: Boolean;
+    FResolvedDecl: TCPASTNode;   // populated by semantic pass -- points to full routine decl
+  public
+    constructor Create(); override;
+    destructor Destroy(); override;
+    property Linkage: TCPLinkage read FLinkage write FLinkage;
+    property Params: TObjectList<TCPParamDeclNode> read FParams;
+    property ReturnType: TCPASTNode read FReturnType write FReturnType;
+    property IsVariadic: Boolean read FIsVariadic write FIsVariadic;
+    property ResolvedDecl: TCPASTNode read FResolvedDecl write FResolvedDecl;
+  end;
+
   { TCPParamDeclNode }
   TCPParamDeclNode = class(TCPASTNode)
   protected
@@ -496,10 +531,12 @@ type
     FTokenKind: TCPTokenKind;    // tkInt32 etc. for primitives, tkIdentifier for user types
     FQualParts: TArray<string>;  // ['ModName', 'TypeName'] for qualified access
     FResolvedDecl: TCPASTNode;   // populated by semantic pass
+    FCppTypeText: string;        // C++23 type string, set by parser/semantics
   public
     property TokenKind: TCPTokenKind read FTokenKind write FTokenKind;
     property QualParts: TArray<string> read FQualParts write FQualParts;
     property ResolvedDecl: TCPASTNode read FResolvedDecl write FResolvedDecl;
+    property CppTypeText: string read FCppTypeText write FCppTypeText;
   end;
 
   { TCPAssignNode }
@@ -813,16 +850,25 @@ type
     property ResolvedDecl: TCPASTNode read FResolvedDecl write FResolvedDecl;
   end;
 
+  { TCPDotAccessKind }
+  TCPDotAccessKind = (
+    dakField,           // record/struct field access: obj.field
+    dakModule,          // module-qualified access: Module.Symbol
+    dakChoices          // choices (enum) member: MyEnum.Value
+  );
+
   { TCPDotAccessNode }
   TCPDotAccessNode = class(TCPExprNode)
   protected
     FBaseExpr: TCPASTNode;
     FMemberName: string;
     FResolvedDecl: TCPASTNode;   // populated by semantic pass
+    FAccessKind: TCPDotAccessKind; // set by semantic pass
   public
     property BaseExpr: TCPASTNode read FBaseExpr write FBaseExpr;
     property MemberName: string read FMemberName write FMemberName;
     property ResolvedDecl: TCPASTNode read FResolvedDecl write FResolvedDecl;
+    property AccessKind: TCPDotAccessKind read FAccessKind write FAccessKind;
   end;
 
   { TCPIndexAccessNode }
@@ -1033,6 +1079,21 @@ begin
   FLocalVars.Free();
   FLocalConsts.Free();
   FLocalTypes.Free();
+  FParams.Free();
+
+  inherited;
+end;
+
+{ TCPForwardRoutineDeclNode }
+constructor TCPForwardRoutineDeclNode.Create();
+begin
+  inherited;
+
+  FParams := TObjectList<TCPParamDeclNode>.Create(True);
+end;
+
+destructor TCPForwardRoutineDeclNode.Destroy();
+begin
   FParams.Free();
 
   inherited;

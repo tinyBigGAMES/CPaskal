@@ -26,9 +26,14 @@ implementation
 
 uses
   System.SysUtils,
+  System.IOUtils,
+  StdApp.Base,
   StdApp.Utils,
   StdApp.Console,
   StdApp.Console.Menu,
+  CPaskal.Common,
+  CPaskal.Compiler,
+  CPaskal.ZigBuild,
   UTestCase.Lexer;
 
 procedure RegisterMenuItems(const AMenu: TConsoleMenu);
@@ -52,9 +57,52 @@ begin
   end;
 end;
 
+procedure Test01();
+var
+  LCompiler: TCPCompiler;
+  LSourceFile: string;
+  LOutputPath: string;
+begin
+  LCompiler := TCPCompiler.Create();
+  try
+    LCompiler.SetStatusCallback(
+      procedure(const AText: string; const AUserData: Pointer)
+      begin
+        TConsole.PrintLn(AText);
+      end, nil);
+
+    LCompiler.SetOutputCallback(
+      procedure(const ALine: string; const AUserData: Pointer)
+      begin
+        TConsole.Print(ALine);
+      end, nil);
+
+    LSourceFile := TUtils.ResolvePath('$P:res\tests\hello');
+    LOutputPath := TUtils.ResolvePath('$P:output');
+
+    TConsole.PrintLn('Source: %s', [LSourceFile]);
+    TConsole.PrintLn('Output: %s', [LOutputPath]);
+    TConsole.PrintLn('');
+
+    LCompiler.Compile(LSourceFile, LOutputPath, True);
+
+    LCompiler.PrintErrors();
+
+    if LCompiler.GetErrors().HasErrors() then
+      TConsole.PrintLn(COLOR_RED + 'FAILED.')
+    else
+      TConsole.PrintLn(COLOR_GREEN + 'OK.');
+  finally
+    LCompiler.Free();
+  end;
+
+  TConsole.Pause();
+end;
+
 procedure RunTestbed();
 begin
   try
+    //Test01();
     Menu();
   except
     on E: Exception do
