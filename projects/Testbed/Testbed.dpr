@@ -23,7 +23,9 @@ uses
   UTestCase.Lexer in 'UTestCase.Lexer.pas',
   CPaskal.ZigBuild in '..\..\src\CPaskal.ZigBuild.pas',
   CPaskal.ZigBuild.Targets in '..\..\src\CPaskal.ZigBuild.Targets.pas',
-  StdApp.Resources in '..\..\src\StdApp.Resources.pas';
+  StdApp.Resources in '..\..\src\StdApp.Resources.pas',
+  CPaskal.AST in '..\..\src\CPaskal.AST.pas',
+  CPaskal.Parser in '..\..\src\CPaskal.Parser.pas';
 
 begin
   RunTestbed();

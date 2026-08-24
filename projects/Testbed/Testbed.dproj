@@ -123,6 +123,8 @@
         <DCCReference Include="..\..\src\CPaskal.ZigBuild.pas"/>
         <DCCReference Include="..\..\src\CPaskal.ZigBuild.Targets.pas"/>
         <DCCReference Include="..\..\src\StdApp.Resources.pas"/>
+        <DCCReference Include="..\..\src\CPaskal.AST.pas"/>
+        <DCCReference Include="..\..\src\CPaskal.Parser.pas"/>
         <BuildConfiguration Include="Base">
             <Key>Base</Key>
         </BuildConfiguration>
