@@ -385,8 +385,8 @@ var
 begin
   FMasterAST := AMasterAST;
 
-  // Process all modules in order (import-dependency order)
-  for I := 0 to FMasterAST.ModuleCount() - 1 do
+  // Process all modules in reverse order (dependencies before dependents)
+  for I := FMasterAST.ModuleCount() - 1 downto 0 do
     DoAnalyzeModule(FMasterAST.GetModuleAt(I));
 end;
 
@@ -1365,6 +1365,7 @@ var
   LDecl: TCPASTNode;
   LRecordType: TCPRecordTypeNode;
   LField: TCPFieldDeclNode;
+  LBaseDecl: TCPASTNode;
 begin
   LLeft := TCPExprNode(ANode.BaseExpr);
   DoAnalyzeExpr(LLeft);
@@ -1428,9 +1429,10 @@ begin
           Exit;
         end;
         // Walk up to base type
-        if (LRecordType.BaseType is TCPTypeDeclNode) and
-           (TCPTypeDeclNode(LRecordType.BaseType).TypeDef is TCPRecordTypeNode) then
-          LRecordType := TCPRecordTypeNode(TCPTypeDeclNode(LRecordType.BaseType).TypeDef)
+        LBaseDecl := GetResolvedTypeDecl(LRecordType.BaseType);
+        if (LBaseDecl is TCPTypeDeclNode) and
+           (TCPTypeDeclNode(LBaseDecl).TypeDef is TCPRecordTypeNode) then
+          LRecordType := TCPRecordTypeNode(TCPTypeDeclNode(LBaseDecl).TypeDef)
         else
           LRecordType := nil;
       end;
@@ -1664,7 +1666,10 @@ var
   LModuleScope: TCPScope;
 begin
   if not (ANode is TCPTypeRefNode) then
+  begin
+    DoAnalyzeTypeDef(ANode);
     Exit;
+  end;
 
   LRef := TCPTypeRefNode(ANode);
 

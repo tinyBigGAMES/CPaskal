@@ -203,7 +203,7 @@ var fp_op: TBinOp;
 var math_ops: TMathOps;
 var mbuf: pointer to uint8;
 var arr5: array[0..4] of int32;
-var darr: array of int;
+var darr: array of int32;
 
 // Phase 24: C++ interop -- cppstart/cppend, cpp()
 

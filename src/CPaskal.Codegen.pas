@@ -514,7 +514,10 @@ var
   LType: string;
   LValue: string;
 begin
-  LType := EmitTypeExpr(ANode.TypeExpr);
+  if ANode.TypeExpr <> nil then
+    LType := EmitTypeExpr(ANode.TypeExpr)
+  else
+    LType := EmitTypeExpr(TCPExprNode(ANode.ValueExpr).ResolvedType);
 
   EmitExpr(TCPExprNode(ANode.ValueExpr));
   LValue := FOutput.ExprResult;
