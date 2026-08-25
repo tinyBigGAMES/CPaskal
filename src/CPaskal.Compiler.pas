@@ -192,7 +192,10 @@ var
   LGeneratedPath: string;
   LProjectName: string;
   LSourceFile: string;
+  LSourceDir: string;
   LModule: TCPModuleNode;
+  LPendingName: string;
+  LPendingFile: string;
   I: Integer;
 begin
   FErrors.Clear();
@@ -210,8 +213,10 @@ begin
   end;
 
   LProjectName := TPath.GetFileNameWithoutExtension(LSourceFile);
+  LSourceDir := TPath.GetDirectoryName(TPath.GetFullPath(LSourceFile));
 
-  // Phase 1: Parse
+  // Phase 1: Parse -- queue-based import processing
+  // Parse the main module, then process any imports it declares
   Status('Parsing %s...', [TPath.GetFileName(LSourceFile)]);
   LModule := FParser.ParseModule(LSourceFile, FMasterAST);
   if LModule = nil then
@@ -220,9 +225,54 @@ begin
   if FErrors.HasErrors() then
     Exit;
 
+  // Process pending imports until queue is empty
+  while FMasterAST.HasPending() do
+  begin
+    LPendingName := FMasterAST.DequeuePending();
+
+    // Resolve import name to file path
+    // First search: source file's own directory
+    LPendingFile := TPath.Combine(LSourceDir,
+      TPath.ChangeExtension(LPendingName, CP_SRC_EXT));
+
+    // TODO: search @modulepath directories if not found in source dir
+
+    if not TFile.Exists(LPendingFile) then
+    begin
+      FErrors.Add(esError, CP_ERR_CMP_001,
+        'Imported module file not found: %s', [LPendingName]);
+      Exit;
+    end;
+
+    Status('Parsing %s...', [TPath.GetFileName(LPendingFile)]);
+    LModule := FParser.ParseModule(LPendingFile, FMasterAST);
+    if LModule = nil then
+      Exit;
+
+    // Verify imported module is a unit
+    if LModule.ModuleKind <> mkUnit then
+    begin
+      FErrors.Add(LModule.Location, esError, CP_ERR_CMP_001,
+        'Cannot import module ''%s'': only unit modules can be imported',
+        [LModule.ModuleName]);
+      LModule.Free();
+      Exit;
+    end;
+
+    FMasterAST.AddModule(LModule);
+    if FErrors.HasErrors() then
+      Exit;
+  end;
+
   // Phase 2: Semantic analysis
   Status('Analyzing...');
-  FSemantics.Analyze(FMasterAST);
+  FErrors.RaiseOnError := True;
+  try
+    FSemantics.Analyze(FMasterAST);
+  except
+    on EStdAppException do;
+  end;
+  FErrors.RaiseOnError := False;
   if FErrors.HasErrors() then
     Exit;
 

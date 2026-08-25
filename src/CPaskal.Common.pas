@@ -58,6 +58,7 @@ type
     tkFloatLiteral,
     tkStringLiteral,
     tkWStringLiteral,
+    tkRawBlock,
 
     // -- Keywords (BNF Section 2 - Reserved Words) --
     tkAddress,
@@ -78,7 +79,10 @@ type
     tkCLink,
     tkConst,
     tkContinue,
+    tkCpp,
+    tkCppEnd,
     tkCppLink,
+    tkCppStart,
     tkCreate,
     tkCStr,
     tkDestroy,

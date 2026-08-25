@@ -116,6 +116,8 @@ type
     procedure EmitAssertStmt(const ANode: TCPAssertStmtNode);
     procedure EmitBreak();
     procedure EmitContinue();
+    procedure EmitCppBlock(const ANode: TCPCppBlockNode);
+    procedure EmitCppExpr(const ANode: TCPCppExprNode);
 
     // Memory
     procedure EmitCreate(const ANode: TCPCreateNode);
@@ -491,7 +493,9 @@ begin
   else if ANode is TCPResizeMemNode then
     EmitResizeMem(TCPResizeMemNode(ANode))
   else if ANode is TCPSetLengthNode then
-    EmitSetLength(TCPSetLengthNode(ANode));
+    EmitSetLength(TCPSetLengthNode(ANode))
+  else if ANode is TCPCppBlockNode then
+    EmitCppBlock(TCPCppBlockNode(ANode));
   // Forward decls and other non-emitting nodes silently skipped
 end;
 
@@ -1187,6 +1191,32 @@ begin
   FOutput.EmitLine('continue;', otSource);
 end;
 
+{ TCPCodegen.EmitCppBlock }
+procedure TCPCodegen.EmitCppBlock(const ANode: TCPCppBlockNode);
+var
+  LTarget: TCPOutputTarget;
+begin
+  if ANode.Target = 'header' then
+    LTarget := otHeader
+  else
+    LTarget := otSource;
+
+  FOutput.EmitRaw(ANode.RawText + sLineBreak, LTarget);
+end;
+
+{ TCPCodegen.EmitCppExpr }
+procedure TCPCodegen.EmitCppExpr(const ANode: TCPCppExprNode);
+begin
+  // The argument is a string literal -- use its raw value as C++ expression
+  if ANode.ArgExpr is TCPStringLiteralNode then
+    FOutput.ExprResult := TCPStringLiteralNode(ANode.ArgExpr).StringValue
+  else
+  begin
+    // Fallback: emit as expression (shouldn't happen in practice)
+    EmitExpr(ANode.ArgExpr);
+  end;
+end;
+
 // Memory statements
 
 procedure TCPCodegen.EmitCreate(const ANode: TCPCreateNode);
@@ -1285,6 +1315,8 @@ begin
     EmitSetLiteral(TCPSetLiteralExprNode(ANode))
   else if ANode is TCPRecordLiteralNode then
     EmitRecordLiteral(TCPRecordLiteralNode(ANode))
+  else if ANode is TCPCppExprNode then
+    EmitCppExpr(TCPCppExprNode(ANode))
   else
     FOutput.ExprResult := '/* unknown expr */';
 end;
@@ -1362,14 +1394,24 @@ end;
 
 procedure TCPCodegen.EmitStringLiteral(const ANode: TCPStringLiteralNode);
 begin
-  // C++ string literal -- the string value is already unescaped,
-  // but we need to re-escape for C++
-  FOutput.ExprResult := '"' + cpEscapeCppString(ANode.StringValue) + '"';
+  // Char coercion: single-char string assigned to char emits 'x' not "x"
+  if (ANode.ResolvedType <> nil) and
+     (ANode.ResolvedType is TCPTypeDeclNode) and
+     (TCPTypeDeclNode(ANode.ResolvedType).PrimitiveKind = tkChar) then
+    FOutput.ExprResult := '''' + cpEscapeCppString(ANode.StringValue) + ''''
+  else
+    FOutput.ExprResult := '"' + cpEscapeCppString(ANode.StringValue) + '"';
 end;
 
 procedure TCPCodegen.EmitWStringLiteral(const ANode: TCPWStringLiteralNode);
 begin
-  FOutput.ExprResult := 'L"' + cpEscapeCppString(ANode.StringValue) + '"';
+  // WChar coercion: single-char wstring assigned to wchar emits u'x' not L"x"
+  if (ANode.ResolvedType <> nil) and
+     (ANode.ResolvedType is TCPTypeDeclNode) and
+     (TCPTypeDeclNode(ANode.ResolvedType).PrimitiveKind = tkWChar) then
+    FOutput.ExprResult := 'u''' + cpEscapeCppString(ANode.StringValue) + ''''
+  else
+    FOutput.ExprResult := 'L"' + cpEscapeCppString(ANode.StringValue) + '"';
 end;
 
 procedure TCPCodegen.EmitBoolLiteral(const ANode: TCPBoolLiteralNode);
@@ -1587,8 +1629,13 @@ begin
 
   if ANode is TCPTypeRefNode then
   begin
-    Result := TCPTypeRefNode(ANode).CppTypeText;
-    if Result = '' then
+    // Primitive types have CppTypeText set by the parser
+    if TCPTypeRefNode(ANode).CppTypeText <> '' then
+      Result := TCPTypeRefNode(ANode).CppTypeText
+    // User-defined types: follow ResolvedDecl to the type declaration
+    else if TCPTypeRefNode(ANode).ResolvedDecl is TCPTypeDeclNode then
+      Result := TCPTypeDeclNode(TCPTypeRefNode(ANode).ResolvedDecl).DeclName
+    else
       Result := 'auto'; // fallback
   end
   else if ANode is TCPArrayTypeNode then
@@ -1632,8 +1679,10 @@ begin
   end
   else if ANode is TCPTypeDeclNode then
   begin
-    // Named type reference
-    Result := TCPTypeDeclNode(ANode).DeclName;
+    if TCPTypeDeclNode(ANode).CppTypeName <> '' then
+      Result := TCPTypeDeclNode(ANode).CppTypeName
+    else
+      Result := TCPTypeDeclNode(ANode).DeclName;
   end
   else
     Result := 'auto'; // fallback for unknown types

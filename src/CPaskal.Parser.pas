@@ -71,6 +71,7 @@ type
     function IsAddOp(const AKind: TCPTokenKind): Boolean;
     function IsMulOp(const AKind: TCPTokenKind): Boolean;
     function IsAssignOp(const AKind: TCPTokenKind): Boolean;
+    function IsStatementStart(const AKind: TCPTokenKind): Boolean;
     function TokenToBinaryOp(const AKind: TCPTokenKind): TCPBinaryOp;
     function TokenToAssignOp(const AKind: TCPTokenKind): TCPAssignOp;
 
@@ -127,6 +128,9 @@ type
     function DoParseSetLengthStmt(): TCPSetLengthNode;
     function DoParsePrintStmt(): TCPPrintNode;
     function DoParseAssertStmt(): TCPAssertStmtNode;
+    function DoParseCppBlock(): TCPCppBlockNode;
+    function DoParseCppStmt(): TCPASTNode;
+    function DoParseCppExpr(): TCPCppExprNode;
 
     // Expressions (Pratt parser)
     function DoParseExpression(): TCPASTNode;
@@ -262,6 +266,26 @@ begin
             (AKind = tkSlashAssign);
 end;
 
+{ TCPParser.IsStatementStart }
+function TCPParser.IsStatementStart(const AKind: TCPTokenKind): Boolean;
+begin
+  Result :=
+    (AKind = tkIf) or (AKind = tkWhile) or (AKind = tkFor) or
+    (AKind = tkRepeat) or (AKind = tkMatch) or (AKind = tkReturn) or
+    (AKind = tkGuard) or (AKind = tkThrow) or (AKind = tkThrowCode) or
+    (AKind = tkBreak) or (AKind = tkContinue) or
+    (AKind = tkCreate) or (AKind = tkDestroy) or
+    (AKind = tkGetMem) or (AKind = tkFreeMem) or
+    (AKind = tkResizeMem) or (AKind = tkSetLength) or
+    (AKind = tkPrint) or (AKind = tkPrintLn) or
+    (AKind = tkAssert) or (AKind = tkAssertTrue) or (AKind = tkAssertFalse) or
+    (AKind = tkAssertEq) or (AKind = tkAssertEqF) or (AKind = tkAssertNil) or
+    (AKind = tkAssertNotNil) or (AKind = tkAssertFail) or
+    (AKind = tkCppStart) or (AKind = tkCpp) or
+    (AKind = tkDirective) or (AKind = tkVar) or
+    (AKind = tkIdentifier) or (AKind = tkVarArgs);
+end;
+
 function TCPParser.TokenToBinaryOp(const AKind: TCPTokenKind): TCPBinaryOp;
 begin
   if AKind = tkPlus then Result := boAdd
@@ -333,7 +357,7 @@ begin
   FMasterAST := AMasterAST;
 
   // Normalize filename with .cpas extension
-  LNormalized := TPath.ChangeExtension(AFilename, '.' + CP_SRC_EXT);
+  LNormalized := TPath.ChangeExtension(AFilename, CP_SRC_EXT);
 
   // Tokenize the source file
   if not FLexer.TokenizeFile(LNormalized) then
@@ -363,15 +387,39 @@ begin
   DoParseImportClause(LModule);
   DoParseDeclarations(LModule);
 
+  if FErrors.HasErrors() then
+  begin
+    LModule.Free();
+    Exit;
+  end;
+
   // Optional initialize/finalize blocks
   DoParseInitializeBlock(LModule);
   DoParseFinalizeBlock(LModule);
 
+  if FErrors.HasErrors() then
+  begin
+    LModule.Free();
+    Exit;
+  end;
+
   // Main body: begin...end.
   DoParseMainBody(LModule);
 
+  if FErrors.HasErrors() then
+  begin
+    LModule.Free();
+    Exit;
+  end;
+
   // Test blocks after end.
   DoParseTestBlocks(LModule);
+
+  if FErrors.HasErrors() then
+  begin
+    LModule.Free();
+    Exit;
+  end;
 
   Result := LModule;
 end;
@@ -482,7 +530,8 @@ var
   LIsPublic: Boolean;
 begin
   // Parse declarations until we hit initialize, finalize, begin, or EOF
-  while not (Check(tkInitialize) or Check(tkFinalize) or Check(tkBegin) or Check(tkEOF)) do
+  while not (Check(tkInitialize) or Check(tkFinalize) or Check(tkBegin) or
+             Check(tkEnd) or Check(tkEOF)) do
   begin
     // Check for public modifier
     LIsPublic := Match(tkPublic);
@@ -538,6 +587,10 @@ begin
     begin
       AModule.Declarations.Add(DoParseForwardDecl());
     end
+    else if Check(tkCppStart) then
+    begin
+      AModule.Declarations.Add(DoParseCppBlock());
+    end
     else if Current().Kind = tkDirective then
     begin
       // Statement-level directives within declarations
@@ -549,6 +602,10 @@ begin
         'Unexpected token in declarations: %s', [Current().TokenText]);
       Consume();  // skip to avoid infinite loop
     end;
+
+    // Bail on error -- everything after is unreliable
+    if FErrors.HasErrors() then
+      Break;
   end;
 end;
 
@@ -588,7 +645,15 @@ procedure TCPParser.DoParseMainBody(const AModule: TCPModuleNode);
 var
   LBody: TObjectList<TCPASTNode>;
 begin
-  Expect(tkBegin);
+  // Unit modules have no begin block -- just end.
+  if not Check(tkBegin) then
+  begin
+    Expect(tkEnd);
+    Expect(tkDot);
+    Exit;
+  end;
+
+  Consume(); // consume 'begin'
 
   LBody := DoParseStatementSeq([tkEnd]);
   AModule.MainBody.AddRange(LBody.ToArray());
@@ -1283,7 +1348,8 @@ var
   LParts: TList<string>;
 begin
   // Inline type expressions: pointer, array, set, or named type reference
-  if Check(tkPointer) then
+  // Bare 'pointer' is a primitive (void*); 'pointer to T' is a typed pointer
+  if Check(tkPointer) and (PeekAt(1).Kind = tkTo) then
   begin
     Result := DoParsePointerType();
     Exit;
@@ -1381,6 +1447,10 @@ begin
     LStmt := DoParseStatement();
     if Assigned(LStmt) then
       Result.Add(LStmt);
+
+    // Bail on error -- everything after is unreliable
+    if FErrors.HasErrors() then
+      Break;
   end;
 end;
 
@@ -1436,6 +1506,10 @@ begin
           Check(tkAssertEq) or Check(tkAssertEqF) or Check(tkAssertNil) or
           Check(tkAssertNotNil) or Check(tkAssertFail) then
     Result := DoParseAssertStmt()
+  else if Check(tkCppStart) then
+    Result := DoParseCppBlock()
+  else if Check(tkCpp) then
+    Result := DoParseCppStmt()
   else if Check(tkDirective) then
   begin
     // Statement-level directive (@breakpoint, @message)
@@ -1456,6 +1530,12 @@ begin
       end;
     end;
     OptionalSemicolon();
+  end
+  else if Check(tkVar) then
+  begin
+    // Inline var declaration in statement position
+    Consume(); // consume 'var'
+    Result := DoParseVarDecl(False);
   end
   else if Check(tkIdentifier) or Check(tkVarArgs) then
     Result := DoParseAssignOrCall()
@@ -1634,7 +1714,7 @@ end;
 function TCPParser.DoParseMatchArm(): TCPMatchArmNode;
 var
   LLabel: TCPMatchLabelNode;
-  LBody: TObjectList<TCPASTNode>;
+  LStmt: TCPASTNode;
 begin
   Result := TCPMatchArmNode.Create();
   Result.Location := Current().Location;
@@ -1654,17 +1734,27 @@ begin
 
   Expect(tkColon);
 
-  // Parse body until next label, else, or end
-  // A new arm starts when we see an expression followed by : or ,
-  // We use a practical heuristic: parse until we hit something that looks
-  // like a new arm start, else, or end
-  LBody := DoParseStatementSeq([tkEnd, tkElse]);
+  // Parse body statements until we leave this arm's scope.
+  // We're in match state -- each iteration checks: is this a statement,
+  // or the start of the next arm / else / end?
+  while not (Check(tkEnd) or Check(tkElse) or Check(tkEOF)) do
+  begin
+    // Skip lone semicolons
+    if Match(tkSemicolon) then
+      Continue;
 
-  // Check if we stopped at what looks like a new match label
-  // If the current token isn't end/else, it's a new arm -- statements parsed
-  Result.Body.AddRange(LBody.ToArray());
-  LBody.OwnsObjects := False;
-  LBody.Free();
+    // If the current token is not a valid statement start, this arm is done.
+    // The match loop in DoParseMatchStmt will pick it up as a new label.
+    if not IsStatementStart(Current().Kind) then
+      Break;
+
+    LStmt := DoParseStatement();
+    if Assigned(LStmt) then
+      Result.Body.Add(LStmt);
+
+    if FErrors.HasErrors() then
+      Break;
+  end;
 end;
 
 function TCPParser.DoParseReturnStmt(): TCPReturnNode;
@@ -1878,6 +1968,80 @@ begin
   OptionalSemicolon();
 end;
 
+{ TCPParser.DoParseCppBlock }
+function TCPParser.DoParseCppBlock(): TCPCppBlockNode;
+var
+  LRaw: string;
+  LTarget: string;
+  LText: string;
+  LSplitPos: Integer;
+begin
+  Result := TCPCppBlockNode.Create();
+  Result.Location := Current().Location;
+  Consume(); // consume tkCppStart
+
+  // The raw block token contains "target\ntext" -- first word is header|source
+  if Current().Kind <> tkRawBlock then
+  begin
+    FErrors.Add(Current().Location, esError, CP_ERR_PAR_001,
+      'Expected raw block content after cppstart', []);
+    Exit;
+  end;
+
+  LRaw := Current().TokenText;
+  Consume(); // consume tkRawBlock
+
+  // Split target from text at first whitespace/newline
+  LSplitPos := 0;
+  while LSplitPos < Length(LRaw) do
+  begin
+    Inc(LSplitPos);
+    if CharInSet(LRaw[LSplitPos], [' ', #9, #10, #13]) then
+      Break;
+  end;
+
+  if LSplitPos <= Length(LRaw) then
+  begin
+    LTarget := LRaw.Substring(0, LSplitPos - 1).Trim();
+    LText := LRaw.Substring(LSplitPos).Trim();
+  end
+  else
+  begin
+    LTarget := LRaw.Trim();
+    LText := '';
+  end;
+
+  Result.Target := LTarget;
+  Result.RawText := LText;
+
+  Expect(tkCppEnd);
+end;
+
+{ TCPParser.DoParseCppStmt }
+function TCPParser.DoParseCppStmt(): TCPASTNode;
+var
+  LExpr: TCPCppExprNode;
+begin
+  // cpp("...") as a statement -- parse as expression, wrap in call stmt
+  LExpr := DoParseCppExpr();
+  Result := TCPCallStmtNode.Create();
+  Result.Location := LExpr.Location;
+  TCPCallStmtNode(Result).CallExpr := LExpr;
+  OptionalSemicolon();
+end;
+
+{ TCPParser.DoParseCppExpr }
+function TCPParser.DoParseCppExpr(): TCPCppExprNode;
+begin
+  Result := TCPCppExprNode.Create();
+  Result.Location := Current().Location;
+  Consume(); // consume tkCpp
+
+  Expect(tkLParen);
+  Result.ArgExpr := TCPExprNode(DoParseExpression());
+  Expect(tkRParen);
+end;
+
 // -- Expressions (Pratt parser) ---------------------------------------------
 
 function TCPParser.DoParseExpression(): TCPASTNode;
@@ -2059,6 +2223,13 @@ begin
   if Check(tkLBracket) then
   begin
     Result := DoParseSetLiteral();
+    Exit;
+  end;
+
+  // cpp() inline expression
+  if Check(tkCpp) then
+  begin
+    Result := DoParseCppExpr();
     Exit;
   end;
 

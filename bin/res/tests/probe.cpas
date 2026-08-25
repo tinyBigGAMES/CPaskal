@@ -1,0 +1,24 @@
+module exe probe;
+
+type
+  TPoint = record
+    x: int32;
+    y: int32;
+  end;
+
+routine add(a: int32; b: int32): int32;
+begin
+  return a + b;
+end;
+
+var
+  pt: TPoint;
+  n: int32;
+
+begin
+  pt.x := 10;
+  pt.y := 20;
+  n := add(pt.x, pt.y);
+  println("sum={}", n);
+  println("len={}", len("hello"));
+end.

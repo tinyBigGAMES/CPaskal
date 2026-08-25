@@ -1,0 +1,19 @@
+module unit myutils;
+
+public const
+  UTIL_VERSION: int32 = 1;
+
+const
+  PRIVATE_SECRET: int32 = 42;
+
+routine private_helper(): int32;
+begin
+  return PRIVATE_SECRET;
+end;
+
+public routine util_add(a: int32; b: int32): int32;
+begin
+  return a + b;
+end;
+
+end.

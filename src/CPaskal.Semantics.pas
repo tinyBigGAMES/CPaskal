@@ -68,6 +68,7 @@ type
     FScopeKind: TCPScopeKind;
     FParent: TCPScope;
     FSymbols: TDictionary<string, TCPASTNode>;
+    FOwnedGroups: TObjectList<TCPOverloadGroupNode>;  // owns overload groups created by Declare
   public
     constructor Create(); override;
     destructor Destroy(); override;
@@ -119,6 +120,8 @@ type
     procedure DoAnalyzeSetType(const ANode: TCPSetTypeNode);
     procedure DoAnalyzeChoicesType(const ANode: TCPChoicesTypeNode);
     procedure DoAnalyzeRoutineType(const ANode: TCPRoutineTypeNode);
+    procedure DoAnalyzeAnonOverlay(const ANode: TCPAnonOverlayNode);
+    procedure DoAnalyzeAnonRecord(const ANode: TCPAnonRecordNode);
 
     // Statement analysis
     procedure DoAnalyzeStatement(const ANode: TCPASTNode);
@@ -137,6 +140,7 @@ type
     procedure DoAnalyzeAssert(const ANode: TCPAssertStmtNode);
     procedure DoAnalyzeBreak(const ANode: TCPBreakNode);
     procedure DoAnalyzeContinue(const ANode: TCPContinueNode);
+    procedure DoAnalyzeCppBlock(const ANode: TCPCppBlockNode);
     procedure DoAnalyzeCreate(const ANode: TCPCreateNode);
     procedure DoAnalyzeDestroy(const ANode: TCPDestroyNode);
     procedure DoAnalyzeGetMem(const ANode: TCPGetMemNode);
@@ -163,7 +167,8 @@ type
     procedure DoResolveLiteralType(const ANode: TCPExprNode);
 
     // Type helpers
-    function ResolveTypeExpr(const ANode: TCPASTNode): TCPASTNode;
+    procedure ResolveTypeExpr(const ANode: TCPASTNode);
+    function GetResolvedTypeDecl(const ANode: TCPASTNode): TCPASTNode;
     function IsAssignableFrom(const ATarget: TCPASTNode; const ASource: TCPASTNode): Boolean;
     function PromoteTypes(const ALeft: TCPASTNode; const ARight: TCPASTNode): TCPASTNode;
     function IsIntegerType(const AType: TCPASTNode): Boolean;
@@ -194,10 +199,12 @@ begin
   inherited;
 
   FSymbols := TDictionary<string, TCPASTNode>.Create();
+  FOwnedGroups := TObjectList<TCPOverloadGroupNode>.Create(True);
 end;
 
 destructor TCPScope.Destroy();
 begin
+  FOwnedGroups.Free();
   FSymbols.Free();
 
   inherited;
@@ -205,12 +212,71 @@ end;
 
 procedure TCPScope.Declare(const AName: string; const ANode: TCPASTNode;
   const ALocation: TSourceRange);
+var
+  LExisting: TCPASTNode;
+  LGroup: TCPOverloadGroupNode;
+  LExistingRoutine: TCPRoutineDeclNode;
+  LNewRoutine: TCPRoutineDeclNode;
 begin
-  if FSymbols.ContainsKey(AName) then
+  if FSymbols.TryGetValue(AName, LExisting) then
   begin
-    FErrors.Add(ALocation, esError, CP_ERR_SEM_002,
-      'Duplicate declaration: %s', [AName]);
-    Exit;
+    // Overload: existing is a routine, new is a routine
+    if (LExisting is TCPRoutineDeclNode) and (ANode is TCPRoutineDeclNode) then
+    begin
+      LExistingRoutine := TCPRoutineDeclNode(LExisting);
+      LNewRoutine := TCPRoutineDeclNode(ANode);
+
+      // Promote to cpplink with warning if needed
+      if LExistingRoutine.Linkage in [lkDefault, lkCLink] then
+      begin
+        FErrors.Add(LExistingRoutine.Location, esWarning, CP_ERR_SEM_002,
+          'Overloaded routine "%s" defaulting to cpplink (clink does not support overloading)',
+          [AName]);
+        LExistingRoutine.Linkage := lkCppLink;
+      end;
+      if LNewRoutine.Linkage in [lkDefault, lkCLink] then
+      begin
+        FErrors.Add(ALocation, esWarning, CP_ERR_SEM_002,
+          'Overloaded routine "%s" defaulting to cpplink (clink does not support overloading)',
+          [AName]);
+        LNewRoutine.Linkage := lkCppLink;
+      end;
+
+      // Create overload group with both routines
+      LGroup := TCPOverloadGroupNode.Create();
+      LGroup.DeclName := AName;
+      LGroup.Overloads.Add(LExistingRoutine);
+      LGroup.Overloads.Add(LNewRoutine);
+      FOwnedGroups.Add(LGroup);
+      FSymbols[AName] := LGroup;
+      Exit;
+    end
+
+    // Overload: existing is already a group, new is a routine
+    else if (LExisting is TCPOverloadGroupNode) and (ANode is TCPRoutineDeclNode) then
+    begin
+      LGroup := TCPOverloadGroupNode(LExisting);
+      LNewRoutine := TCPRoutineDeclNode(ANode);
+
+      if LNewRoutine.Linkage in [lkDefault, lkCLink] then
+      begin
+        FErrors.Add(ALocation, esWarning, CP_ERR_SEM_002,
+          'Overloaded routine "%s" defaulting to cpplink (clink does not support overloading)',
+          [AName]);
+        LNewRoutine.Linkage := lkCppLink;
+      end;
+
+      LGroup.Overloads.Add(LNewRoutine);
+      Exit;
+    end
+
+    // Not a routine overload -- genuine duplicate
+    else
+    begin
+      FErrors.Add(ALocation, esError, CP_ERR_SEM_002,
+        'Duplicate declaration: %s', [AName]);
+      Exit;
+    end;
   end;
   FSymbols.Add(AName, ANode);
 end;
@@ -256,32 +322,35 @@ end;
 
 procedure TCPSemantics.InitPrimitiveTypes();
 
-  procedure LRegister(const AKind: TCPTokenKind; const AName: string);
+  procedure LRegister(const AKind: TCPTokenKind; const AName: string;
+    const ACppTypeName: string);
   var
     LNode: TCPTypeDeclNode;
   begin
     LNode := TCPTypeDeclNode.Create();
     LNode.DeclName := AName;
+    LNode.PrimitiveKind := AKind;
+    LNode.CppTypeName := ACppTypeName;
     FPrimitiveTypes.Add(AKind, LNode);
   end;
 
 begin
-  LRegister(tkInt8, 'int8');
-  LRegister(tkInt16, 'int16');
-  LRegister(tkInt32, 'int32');
-  LRegister(tkInt64, 'int64');
-  LRegister(tkUInt8, 'uint8');
-  LRegister(tkUInt16, 'uint16');
-  LRegister(tkUInt32, 'uint32');
-  LRegister(tkUInt64, 'uint64');
-  LRegister(tkFloat32, 'float32');
-  LRegister(tkFloat64, 'float64');
-  LRegister(tkBoolean, 'boolean');
-  LRegister(tkChar, 'char');
-  LRegister(tkWChar, 'wchar');
-  LRegister(tkString, 'string');
-  LRegister(tkWString, 'wstring');
-  LRegister(tkPointer, 'pointer');
+  LRegister(tkInt8, 'int8', 'int8_t');
+  LRegister(tkInt16, 'int16', 'int16_t');
+  LRegister(tkInt32, 'int32', 'int32_t');
+  LRegister(tkInt64, 'int64', 'int64_t');
+  LRegister(tkUInt8, 'uint8', 'uint8_t');
+  LRegister(tkUInt16, 'uint16', 'uint16_t');
+  LRegister(tkUInt32, 'uint32', 'uint32_t');
+  LRegister(tkUInt64, 'uint64', 'uint64_t');
+  LRegister(tkFloat32, 'float32', 'float');
+  LRegister(tkFloat64, 'float64', 'double');
+  LRegister(tkBoolean, 'boolean', 'bool');
+  LRegister(tkChar, 'char', 'char');
+  LRegister(tkWChar, 'wchar', 'char16_t');
+  LRegister(tkString, 'string', 'std::string');
+  LRegister(tkWString, 'wstring', 'std::wstring');
+  LRegister(tkPointer, 'pointer', 'void*');
 end;
 
 function TCPSemantics.GetPrimitiveType(const AKind: TCPTokenKind): TCPTypeDeclNode;
@@ -339,15 +408,29 @@ begin
       AModule.Imports[I].ModuleName);
     if AModule.Imports[I].ResolvedModule = nil then
       FErrors.Add(AModule.Imports[I].Location, esError, CP_ERR_SEM_001,
-        'Imported module not found: %s', [AModule.Imports[I].ModuleName]);
+        'Imported module not found: %s', [AModule.Imports[I].ModuleName])
+    else
+      // Register import name in scope for qualified access (myutils.symbol)
+      LScope.Declare(AModule.Imports[I].ModuleName, AModule.Imports[I],
+        AModule.Imports[I].Location);
   end;
+
+  if FErrors.HasErrors() then
+    Exit;
 
   // Walk declarations in order (declare-before-use)
   for I := 0 to AModule.Declarations.Count - 1 do
+  begin
     DoAnalyzeDeclaration(AModule.Declarations[I]);
+    if FErrors.HasErrors() then
+      Exit;
+  end;
 
   // Validate all forward declarations resolved
   DoValidateForwards();
+
+  if FErrors.HasErrors() then
+    Exit;
 
   // Analyze bodies
   DoAnalyzeStatementSeq(AModule.InitBody);
@@ -358,9 +441,12 @@ begin
   for I := 0 to AModule.TestBlocks.Count - 1 do
   begin
     PushScope(skTest);
-    // Register test block local vars
-    DoAnalyzeStatementSeq(AModule.TestBlocks[I].Body);
-    PopScope();
+    try
+      // Register test block local vars
+      DoAnalyzeStatementSeq(AModule.TestBlocks[I].Body);
+    finally
+      PopScope();
+    end;
   end;
 
   // Pop module scope (stays in FModuleScopes)
@@ -383,6 +469,8 @@ begin
     DoAnalyzeForwardRoutineDecl(TCPForwardRoutineDeclNode(ANode))
   else if ANode is TCPDirectiveNode then
     // Directives don't need semantic analysis
+  else if ANode is TCPCppBlockNode then
+    DoAnalyzeCppBlock(TCPCppBlockNode(ANode))
   else
     FErrors.Add(ANode.Location, esError, CP_ERR_SEM_013,
       'Unexpected declaration node type');
@@ -400,8 +488,8 @@ begin
     // Type annotation present -- resolve and check compatibility
     if ANode.TypeExpr <> nil then
     begin
-      ANode.TypeExpr := ResolveTypeExpr(ANode.TypeExpr);
-      if not IsAssignableFrom(ANode.TypeExpr, TCPExprNode(ANode.ValueExpr).ResolvedType) then
+      ResolveTypeExpr(ANode.TypeExpr);
+      if not IsAssignableFrom(GetResolvedTypeDecl(ANode.TypeExpr), TCPExprNode(ANode.ValueExpr).ResolvedType) then
         FErrors.Add(ANode.Location, esError, CP_ERR_SEM_003,
           'Const value type does not match declared type for: %s', [ANode.DeclName]);
     end;
@@ -444,15 +532,26 @@ begin
 
   // Resolve the type expression
   if ANode.TypeExpr <> nil then
-    ANode.TypeExpr := ResolveTypeExpr(ANode.TypeExpr);
+    ResolveTypeExpr(ANode.TypeExpr);
 
   // Analyze initializer if present
   if ANode.InitExpr <> nil then
   begin
     DoAnalyzeExpr(TCPExprNode(ANode.InitExpr));
+
+    // Implicit string-to-char coercion for single-character literals
+    if (GetResolvedTypeDecl(ANode.TypeExpr) = GetPrimitiveType(tkChar)) and
+       (ANode.InitExpr is TCPStringLiteralNode) and
+       (Length(TCPStringLiteralNode(ANode.InitExpr).StringValue) = 1) then
+      TCPExprNode(ANode.InitExpr).ResolvedType := GetPrimitiveType(tkChar)
+    else if (GetResolvedTypeDecl(ANode.TypeExpr) = GetPrimitiveType(tkWChar)) and
+            (ANode.InitExpr is TCPWStringLiteralNode) and
+            (Length(TCPWStringLiteralNode(ANode.InitExpr).StringValue) = 1) then
+      TCPExprNode(ANode.InitExpr).ResolvedType := GetPrimitiveType(tkWChar);
+
     if (ANode.TypeExpr <> nil) and (TCPExprNode(ANode.InitExpr).ResolvedType <> nil) then
     begin
-      if not IsAssignableFrom(ANode.TypeExpr, TCPExprNode(ANode.InitExpr).ResolvedType) then
+      if not IsAssignableFrom(GetResolvedTypeDecl(ANode.TypeExpr), TCPExprNode(ANode.InitExpr).ResolvedType) then
         FErrors.Add(ANode.Location, esError, CP_ERR_SEM_003,
           'Initializer type does not match declared type for: %s', [ANode.DeclName]);
     end;
@@ -476,6 +575,11 @@ begin
       TCPForwardRoutineDeclNode(LForward).ResolvedDecl := ANode;
       FCurrentScope.FSymbols[ANode.DeclName] := ANode;
     end
+    else if (LForward is TCPRoutineDeclNode) or (LForward is TCPOverloadGroupNode) then
+    begin
+      // Overload -- delegate to Declare which handles group creation
+      FCurrentScope.Declare(ANode.DeclName, ANode, ANode.Location);
+    end
     else
     begin
       FErrors.Add(ANode.Location, esError, CP_ERR_SEM_002,
@@ -488,13 +592,13 @@ begin
 
   // Resolve return type
   if ANode.ReturnType <> nil then
-    ANode.ReturnType := ResolveTypeExpr(ANode.ReturnType);
+    ResolveTypeExpr(ANode.ReturnType);
 
   // Resolve parameter types
   for I := 0 to ANode.Params.Count - 1 do
   begin
     if ANode.Params[I].TypeExpr <> nil then
-      ANode.Params[I].TypeExpr := ResolveTypeExpr(ANode.Params[I].TypeExpr);
+      ResolveTypeExpr(ANode.Params[I].TypeExpr);
   end;
 
   // External routines have no body to analyze
@@ -505,37 +609,38 @@ begin
   LScope := PushScope(skRoutine);
   LPrevRoutine := FCurrentRoutine;
   FCurrentRoutine := ANode;
+  try
+    // Register parameters in routine scope
+    for I := 0 to ANode.Params.Count - 1 do
+      LScope.Declare(ANode.Params[I].ParamName, ANode.Params[I],
+        ANode.Params[I].Location);
 
-  // Register parameters in routine scope
-  for I := 0 to ANode.Params.Count - 1 do
-    LScope.Declare(ANode.Params[I].ParamName, ANode.Params[I],
-      ANode.Params[I].Location);
+    // Register local types
+    for I := 0 to ANode.LocalTypes.Count - 1 do
+      DoAnalyzeTypeDecl(ANode.LocalTypes[I]);
 
-  // Register local types
-  for I := 0 to ANode.LocalTypes.Count - 1 do
-    DoAnalyzeTypeDecl(ANode.LocalTypes[I]);
+    // Register local consts
+    for I := 0 to ANode.LocalConsts.Count - 1 do
+      DoAnalyzeConstDecl(ANode.LocalConsts[I]);
 
-  // Register local consts
-  for I := 0 to ANode.LocalConsts.Count - 1 do
-    DoAnalyzeConstDecl(ANode.LocalConsts[I]);
+    // Register local vars
+    for I := 0 to ANode.LocalVars.Count - 1 do
+      DoAnalyzeVarDecl(ANode.LocalVars[I]);
 
-  // Register local vars
-  for I := 0 to ANode.LocalVars.Count - 1 do
-    DoAnalyzeVarDecl(ANode.LocalVars[I]);
+    // Analyze body
+    DoAnalyzeStatementSeq(ANode.Body);
 
-  // Analyze body
-  DoAnalyzeStatementSeq(ANode.Body);
-
-  // Check return paths for functions
-  if ANode.ReturnType <> nil then
-  begin
-    if not DoCheckReturnPaths(ANode.Body) then
-      FErrors.Add(ANode.Location, esError, CP_ERR_SEM_007,
-        'Not all code paths return a value in function: %s', [ANode.DeclName]);
+    // Check return paths for functions
+    if ANode.ReturnType <> nil then
+    begin
+      if not DoCheckReturnPaths(ANode.Body) then
+        FErrors.Add(ANode.Location, esError, CP_ERR_SEM_007,
+          'Not all code paths return a value in function: %s', [ANode.DeclName]);
+    end;
+  finally
+    FCurrentRoutine := LPrevRoutine;
+    PopScope();
   end;
-
-  FCurrentRoutine := LPrevRoutine;
-  PopScope();
 end;
 
 procedure TCPSemantics.DoAnalyzeForwardTypeDecl(const ANode: TCPForwardTypeDeclNode);
@@ -553,12 +658,12 @@ begin
   for I := 0 to ANode.Params.Count - 1 do
   begin
     if ANode.Params[I].TypeExpr <> nil then
-      ANode.Params[I].TypeExpr := ResolveTypeExpr(ANode.Params[I].TypeExpr);
+      ResolveTypeExpr(ANode.Params[I].TypeExpr);
   end;
 
   // Resolve return type
   if ANode.ReturnType <> nil then
-    ANode.ReturnType := ResolveTypeExpr(ANode.ReturnType);
+    ResolveTypeExpr(ANode.ReturnType);
 end;
 
 procedure TCPSemantics.DoValidateForwards();
@@ -595,7 +700,11 @@ begin
   else if ANode is TCPChoicesTypeNode then
     DoAnalyzeChoicesType(TCPChoicesTypeNode(ANode))
   else if ANode is TCPRoutineTypeNode then
-    DoAnalyzeRoutineType(TCPRoutineTypeNode(ANode));
+    DoAnalyzeRoutineType(TCPRoutineTypeNode(ANode))
+  else if ANode is TCPAnonOverlayNode then
+    DoAnalyzeAnonOverlay(TCPAnonOverlayNode(ANode))
+  else if ANode is TCPAnonRecordNode then
+    DoAnalyzeAnonRecord(TCPAnonRecordNode(ANode));
 end;
 
 procedure TCPSemantics.DoAnalyzeRecordType(const ANode: TCPRecordTypeNode);
@@ -606,7 +715,7 @@ var
 begin
   // Resolve base type if present
   if ANode.BaseType <> nil then
-    ANode.BaseType := ResolveTypeExpr(ANode.BaseType);
+    ResolveTypeExpr(ANode.BaseType);
 
   // Check for duplicate field names and resolve field types
   LNames := TDictionary<string, Boolean>.Create();
@@ -623,7 +732,7 @@ begin
           LNames.Add(LField.FieldName, True);
 
         if LField.TypeExpr <> nil then
-          LField.TypeExpr := ResolveTypeExpr(LField.TypeExpr);
+          ResolveTypeExpr(LField.TypeExpr);
       end
       else if ANode.Fields[I] is TCPAnonOverlayNode then
         DoAnalyzeTypeDef(ANode.Fields[I]);
@@ -653,7 +762,7 @@ begin
           LNames.Add(LField.FieldName, True);
 
         if LField.TypeExpr <> nil then
-          LField.TypeExpr := ResolveTypeExpr(LField.TypeExpr);
+          ResolveTypeExpr(LField.TypeExpr);
       end;
     end;
   finally
@@ -661,23 +770,61 @@ begin
   end;
 end;
 
+{ TCPSemantics - DoAnalyzeAnonOverlay }
+procedure TCPSemantics.DoAnalyzeAnonOverlay(const ANode: TCPAnonOverlayNode);
+var
+  I: Integer;
+  LField: TCPFieldDeclNode;
+begin
+  for I := 0 to ANode.Fields.Count - 1 do
+  begin
+    if ANode.Fields[I] is TCPFieldDeclNode then
+    begin
+      LField := TCPFieldDeclNode(ANode.Fields[I]);
+      if LField.TypeExpr <> nil then
+        ResolveTypeExpr(LField.TypeExpr);
+    end
+    else
+      DoAnalyzeTypeDef(ANode.Fields[I]);
+  end;
+end;
+
+{ TCPSemantics - DoAnalyzeAnonRecord }
+procedure TCPSemantics.DoAnalyzeAnonRecord(const ANode: TCPAnonRecordNode);
+var
+  I: Integer;
+  LField: TCPFieldDeclNode;
+begin
+  for I := 0 to ANode.Fields.Count - 1 do
+  begin
+    if ANode.Fields[I] is TCPFieldDeclNode then
+    begin
+      LField := TCPFieldDeclNode(ANode.Fields[I]);
+      if LField.TypeExpr <> nil then
+        ResolveTypeExpr(LField.TypeExpr);
+    end
+    else
+      DoAnalyzeTypeDef(ANode.Fields[I]);
+  end;
+end;
+
 procedure TCPSemantics.DoAnalyzeArrayType(const ANode: TCPArrayTypeNode);
 begin
   if ANode.ElementType <> nil then
-    ANode.ElementType := ResolveTypeExpr(ANode.ElementType);
+    ResolveTypeExpr(ANode.ElementType);
 end;
 
 procedure TCPSemantics.DoAnalyzePointerType(const ANode: TCPPointerTypeNode);
 begin
   // Pointer target can reference a forward-declared type
   if ANode.TargetType <> nil then
-    ANode.TargetType := ResolveTypeExpr(ANode.TargetType);
+    ResolveTypeExpr(ANode.TargetType);
 end;
 
 procedure TCPSemantics.DoAnalyzeSetType(const ANode: TCPSetTypeNode);
 begin
   if ANode.ElementType <> nil then
-    ANode.ElementType := ResolveTypeExpr(ANode.ElementType);
+    ResolveTypeExpr(ANode.ElementType);
 end;
 
 procedure TCPSemantics.DoAnalyzeChoicesType(const ANode: TCPChoicesTypeNode);
@@ -701,11 +848,11 @@ begin
   for I := 0 to ANode.Params.Count - 1 do
   begin
     if ANode.Params[I].TypeExpr <> nil then
-      ANode.Params[I].TypeExpr := ResolveTypeExpr(ANode.Params[I].TypeExpr);
+      ResolveTypeExpr(ANode.Params[I].TypeExpr);
   end;
 
   if ANode.ReturnType <> nil then
-    ANode.ReturnType := ResolveTypeExpr(ANode.ReturnType);
+    ResolveTypeExpr(ANode.ReturnType);
 end;
 
 // Statement analysis
@@ -716,7 +863,11 @@ begin
   if AList = nil then
     Exit;
   for I := 0 to AList.Count - 1 do
+  begin
     DoAnalyzeStatement(AList[I]);
+    if FErrors.HasErrors() then
+      Exit;
+  end;
 end;
 
 procedure TCPSemantics.DoAnalyzeStatement(const ANode: TCPASTNode);
@@ -764,8 +915,12 @@ begin
   else if ANode is TCPThrowCodeNode then
     // ThrowCode has code + message expressions
     DoAnalyzeThrow(nil)  // handled inline
+  else if ANode is TCPVarDeclNode then
+    DoAnalyzeVarDecl(TCPVarDeclNode(ANode))
   else if ANode is TCPDirectiveNode then
     // Directives in statement position -- no analysis needed
+  else if ANode is TCPCppBlockNode then
+    DoAnalyzeCppBlock(TCPCppBlockNode(ANode))
   ;
 end;
 
@@ -829,12 +984,13 @@ begin
 
   // Push block scope for iterator variable
   PushScope(skBlock);
-
-  Inc(FLoopDepth);
-  DoAnalyzeStatementSeq(ANode.Body);
-  Dec(FLoopDepth);
-
-  PopScope();
+  try
+    Inc(FLoopDepth);
+    DoAnalyzeStatementSeq(ANode.Body);
+    Dec(FLoopDepth);
+  finally
+    PopScope();
+  end;
 end;
 
 procedure TCPSemantics.DoAnalyzeRepeat(const ANode: TCPRepeatNode);
@@ -883,7 +1039,7 @@ begin
     if (FCurrentRoutine.ReturnType <> nil) and
        (TCPExprNode(ANode.ValueExpr).ResolvedType <> nil) then
     begin
-      if not IsAssignableFrom(FCurrentRoutine.ReturnType,
+      if not IsAssignableFrom(GetResolvedTypeDecl(FCurrentRoutine.ReturnType),
                               TCPExprNode(ANode.ValueExpr).ResolvedType) then
         FErrors.Add(ANode.Location, esError, CP_ERR_SEM_003,
           'Return value type does not match function return type');
@@ -941,6 +1097,17 @@ begin
       'Continue statement outside of a loop');
 end;
 
+{ TCPSemantics.DoAnalyzeCppBlock }
+procedure TCPSemantics.DoAnalyzeCppBlock(const ANode: TCPCppBlockNode);
+begin
+  // Validate target is 'header' or 'source'
+  if (ANode.Target <> 'header') and (ANode.Target <> 'source') then
+    FErrors.Add(ANode.Location, esError, CP_ERR_SEM_013,
+      'cppstart target must be ''header'' or ''source'', got ''%s''',
+      [ANode.Target]);
+end;
+
+{ TCPSemantics.DoAnalyzeCreate }
 procedure TCPSemantics.DoAnalyzeCreate(const ANode: TCPCreateNode);
 begin
   if ANode.ArgExpr <> nil then
@@ -1009,6 +1176,8 @@ begin
     DoAnalyzeSetLiteral(TCPSetLiteralExprNode(ANode))
   else if ANode is TCPRecordLiteralNode then
     DoAnalyzeRecordLiteral(TCPRecordLiteralNode(ANode))
+  else if ANode is TCPCppExprNode then
+    // cpp() expressions pass through -- raw C++ with no semantic analysis
   else if ANode is TCPTypeRefNode then
     DoAnalyzeTypeRef(TCPTypeRefNode(ANode))
   else if (ANode is TCPIntLiteralNode) or (ANode is TCPFloatLiteralNode) or
@@ -1058,19 +1227,24 @@ begin
       ANode.ResolvedType := GetPrimitiveType(tkBoolean);
     boAnd, boOr, boXor:
     begin
-      if (not IsBooleanType(LLeft)) or (not IsBooleanType(LRight)) then
-        FErrors.Add(ANode.Location, esError, CP_ERR_SEM_003,
-          'Boolean operator requires boolean operands');
-      ANode.ResolvedType := GetPrimitiveType(tkBoolean);
-
-      // Disambiguate for codegen: boolean and/or -> logical (&&/||)
       if IsBooleanType(LLeft) and IsBooleanType(LRight) then
       begin
+        // Boolean context: logical operators
+        ANode.ResolvedType := GetPrimitiveType(tkBoolean);
         if ANode.Op = boAnd then
           ANode.Op := boLogicalAnd
         else if ANode.Op = boOr then
           ANode.Op := boLogicalOr;
-      end;
+        // boXor stays as boXor -- C++ ^ is correct for boolean xor
+      end
+      else if IsIntegerType(LLeft) and IsIntegerType(LRight) then
+      begin
+        // Integer context: bitwise operators
+        ANode.ResolvedType := PromoteTypes(LLeft, LRight);
+      end
+      else
+        FErrors.Add(ANode.Location, esError, CP_ERR_SEM_003,
+          'and/or/xor requires both operands to be boolean or both integer');
     end;
     boIn:
       ANode.ResolvedType := GetPrimitiveType(tkBoolean);
@@ -1097,6 +1271,8 @@ begin
         'Not operator requires boolean operand');
     ANode.ResolvedType := GetPrimitiveType(tkBoolean);
   end
+  else if ANode.Op = uoAddressOf then
+    ANode.ResolvedType := GetPrimitiveType(tkPointer)
   else
     // Unary minus/plus: same type as operand
     ANode.ResolvedType := TCPExprNode(ANode.Operand).ResolvedType;
@@ -1125,39 +1301,77 @@ begin
 
   // Resolve type based on what the identifier refers to
   if LDecl is TCPVarDeclNode then
-    ANode.ResolvedType := TCPVarDeclNode(LDecl).TypeExpr
+    ANode.ResolvedType := GetResolvedTypeDecl(TCPVarDeclNode(LDecl).TypeExpr)
   else if LDecl is TCPConstDeclNode then
   begin
     if TCPConstDeclNode(LDecl).TypeExpr <> nil then
-      ANode.ResolvedType := TCPConstDeclNode(LDecl).TypeExpr
+      ANode.ResolvedType := GetResolvedTypeDecl(TCPConstDeclNode(LDecl).TypeExpr)
     else if TCPConstDeclNode(LDecl).ValueExpr <> nil then
       ANode.ResolvedType := TCPExprNode(TCPConstDeclNode(LDecl).ValueExpr).ResolvedType;
   end
   else if LDecl is TCPParamDeclNode then
-    ANode.ResolvedType := TCPParamDeclNode(LDecl).TypeExpr
+    ANode.ResolvedType := GetResolvedTypeDecl(TCPParamDeclNode(LDecl).TypeExpr)
   else if LDecl is TCPRoutineDeclNode then
     // Identifier refers to a routine -- type is the routine itself
     ANode.ResolvedType := LDecl
+  else if LDecl is TCPOverloadGroupNode then
+    // Identifier refers to an overload group -- resolved at call site
+    ANode.ResolvedType := LDecl
   else if LDecl is TCPForwardRoutineDeclNode then
+    ANode.ResolvedType := LDecl
+  else if LDecl is TCPImportNode then
+    // Import module name -- resolved type is the import itself (for dot access)
     ANode.ResolvedType := LDecl
   else if LDecl is TCPTypeDeclNode then
     ANode.ResolvedType := LDecl;
 end;
 
 procedure TCPSemantics.DoAnalyzeDotAccess(const ANode: TCPDotAccessNode);
+
+  function FindFieldInFields(const AFields: TObjectList<TCPASTNode>;
+    const AName: string): TCPFieldDeclNode;
+  var
+    LI: Integer;
+    LF: TCPFieldDeclNode;
+    LResult: TCPFieldDeclNode;
+  begin
+    Result := nil;
+    for LI := 0 to AFields.Count - 1 do
+    begin
+      if AFields[LI] is TCPFieldDeclNode then
+      begin
+        LF := TCPFieldDeclNode(AFields[LI]);
+        if LF.FieldName = AName then
+          Exit(LF);
+      end
+      else if AFields[LI] is TCPAnonOverlayNode then
+      begin
+        LResult := FindFieldInFields(TCPAnonOverlayNode(AFields[LI]).Fields, AName);
+        if LResult <> nil then
+          Exit(LResult);
+      end
+      else if AFields[LI] is TCPAnonRecordNode then
+      begin
+        LResult := FindFieldInFields(TCPAnonRecordNode(AFields[LI]).Fields, AName);
+        if LResult <> nil then
+          Exit(LResult);
+      end;
+    end;
+  end;
+
 var
   LLeft: TCPExprNode;
   LModuleScope: TCPScope;
   LDecl: TCPASTNode;
   LRecordType: TCPRecordTypeNode;
   LField: TCPFieldDeclNode;
-  I: Integer;
 begin
   LLeft := TCPExprNode(ANode.BaseExpr);
   DoAnalyzeExpr(LLeft);
 
   // Check if left side is a module name (cross-module qualified access)
-  if (LLeft is TCPIdentifierNode) and (TCPIdentifierNode(LLeft).ResolvedDecl = nil) then
+  if (LLeft is TCPIdentifierNode) and
+     (TCPIdentifierNode(LLeft).ResolvedDecl is TCPImportNode) then
   begin
     // It might be a module name -- check imports
     if FModuleScopes.TryGetValue(TCPIdentifierNode(LLeft).IdentName, LModuleScope) then
@@ -1185,9 +1399,9 @@ begin
       ANode.AccessKind := dakModule;
       // Resolve type of the accessed symbol
       if LDecl is TCPVarDeclNode then
-        ANode.ResolvedType := TCPVarDeclNode(LDecl).TypeExpr
+        ANode.ResolvedType := GetResolvedTypeDecl(TCPVarDeclNode(LDecl).TypeExpr)
       else if LDecl is TCPConstDeclNode then
-        ANode.ResolvedType := TCPConstDeclNode(LDecl).TypeExpr
+        ANode.ResolvedType := GetResolvedTypeDecl(TCPConstDeclNode(LDecl).TypeExpr)
       else if LDecl is TCPRoutineDeclNode then
         ANode.ResolvedType := LDecl
       else if LDecl is TCPTypeDeclNode then
@@ -1202,19 +1416,23 @@ begin
     if TCPTypeDeclNode(LLeft.ResolvedType).TypeDef is TCPRecordTypeNode then
     begin
       LRecordType := TCPRecordTypeNode(TCPTypeDeclNode(LLeft.ResolvedType).TypeDef);
-      for I := 0 to LRecordType.Fields.Count - 1 do
+      // Search own fields, anonymous overlays/records, and inherited fields
+      while LRecordType <> nil do
       begin
-        if LRecordType.Fields[I] is TCPFieldDeclNode then
+        LField := FindFieldInFields(LRecordType.Fields, ANode.MemberName);
+        if LField <> nil then
         begin
-          LField := TCPFieldDeclNode(LRecordType.Fields[I]);
-          if LField.FieldName = ANode.MemberName then
-          begin
-            ANode.ResolvedDecl := LField;
-            ANode.ResolvedType := LField.TypeExpr;
-            ANode.AccessKind := dakField;
-            Exit;
-          end;
+          ANode.ResolvedDecl := LField;
+          ANode.ResolvedType := GetResolvedTypeDecl(LField.TypeExpr);
+          ANode.AccessKind := dakField;
+          Exit;
         end;
+        // Walk up to base type
+        if (LRecordType.BaseType is TCPTypeDeclNode) and
+           (TCPTypeDeclNode(LRecordType.BaseType).TypeDef is TCPRecordTypeNode) then
+          LRecordType := TCPRecordTypeNode(TCPTypeDeclNode(LRecordType.BaseType).TypeDef)
+        else
+          LRecordType := nil;
       end;
       FErrors.Add(ANode.Location, esError, CP_ERR_SEM_001,
         'Field not found: %s', [ANode.MemberName]);
@@ -1243,8 +1461,8 @@ begin
   if TCPExprNode(ANode.BaseExpr).ResolvedType is TCPTypeDeclNode then
   begin
     if TCPTypeDeclNode(TCPExprNode(ANode.BaseExpr).ResolvedType).TypeDef is TCPArrayTypeNode then
-      ANode.ResolvedType := TCPArrayTypeNode(
-        TCPTypeDeclNode(TCPExprNode(ANode.BaseExpr).ResolvedType).TypeDef).ElementType;
+      ANode.ResolvedType := GetResolvedTypeDecl(TCPArrayTypeNode(
+        TCPTypeDeclNode(TCPExprNode(ANode.BaseExpr).ResolvedType).TypeDef).ElementType);
   end;
 end;
 
@@ -1263,8 +1481,8 @@ begin
   if TCPExprNode(ANode.BaseExpr).ResolvedType is TCPTypeDeclNode then
   begin
     if TCPTypeDeclNode(TCPExprNode(ANode.BaseExpr).ResolvedType).TypeDef is TCPPointerTypeNode then
-      ANode.ResolvedType := TCPPointerTypeNode(
-        TCPTypeDeclNode(TCPExprNode(ANode.BaseExpr).ResolvedType).TypeDef).TargetType;
+      ANode.ResolvedType := GetResolvedTypeDecl(TCPPointerTypeNode(
+        TCPTypeDeclNode(TCPExprNode(ANode.BaseExpr).ResolvedType).TypeDef).TargetType);
   end;
 end;
 
@@ -1272,6 +1490,8 @@ procedure TCPSemantics.DoAnalyzeCallExpr(const ANode: TCPCallExprNode);
 var
   LRoutine: TCPRoutineDeclNode;
   LForwardRoutine: TCPForwardRoutineDeclNode;
+  LGroup: TCPOverloadGroupNode;
+  LMatched: TCPRoutineDeclNode;
   I: Integer;
 begin
   DoAnalyzeExpr(TCPExprNode(ANode.Callee));
@@ -1281,11 +1501,43 @@ begin
     DoAnalyzeExpr(TCPExprNode(ANode.Args[I]));
 
   // Resolve the call target
-  if TCPExprNode(ANode.Callee).ResolvedType is TCPRoutineDeclNode then
+  if TCPExprNode(ANode.Callee).ResolvedType is TCPOverloadGroupNode then
+  begin
+    // Overload resolution: match by argument count, then by types
+    LGroup := TCPOverloadGroupNode(TCPExprNode(ANode.Callee).ResolvedType);
+    LMatched := nil;
+    for I := 0 to LGroup.Overloads.Count - 1 do
+    begin
+      LRoutine := LGroup.Overloads[I];
+      if LRoutine.IsVariadic then
+      begin
+        if ANode.Args.Count >= LRoutine.Params.Count then
+        begin
+          LMatched := LRoutine;
+          Break;
+        end;
+      end
+      else if ANode.Args.Count = LRoutine.Params.Count then
+      begin
+        LMatched := LRoutine;
+        Break;
+      end;
+    end;
+
+    if LMatched <> nil then
+    begin
+      ANode.ResolvedRoutine := LMatched;
+      ANode.ResolvedType := GetResolvedTypeDecl(LMatched.ReturnType);
+    end
+    else
+      FErrors.Add(ANode.Location, esError, CP_ERR_SEM_004,
+        'No overload of "%s" matches %d argument(s)', [LGroup.DeclName, ANode.Args.Count]);
+  end
+  else if TCPExprNode(ANode.Callee).ResolvedType is TCPRoutineDeclNode then
   begin
     LRoutine := TCPRoutineDeclNode(TCPExprNode(ANode.Callee).ResolvedType);
     ANode.ResolvedRoutine := LRoutine;
-    ANode.ResolvedType := LRoutine.ReturnType;
+    ANode.ResolvedType := GetResolvedTypeDecl(LRoutine.ReturnType);
 
     // Check argument count (account for variadic)
     if not LRoutine.IsVariadic then
@@ -1305,17 +1557,24 @@ begin
   begin
     LForwardRoutine := TCPForwardRoutineDeclNode(TCPExprNode(ANode.Callee).ResolvedType);
     ANode.ResolvedRoutine := LForwardRoutine;
-    ANode.ResolvedType := LForwardRoutine.ReturnType;
+    ANode.ResolvedType := GetResolvedTypeDecl(LForwardRoutine.ReturnType);
+  end
+  else if (TCPExprNode(ANode.Callee).ResolvedType is TCPTypeDeclNode) and
+          (TCPTypeDeclNode(TCPExprNode(ANode.Callee).ResolvedType).TypeDef is TCPRoutineTypeNode) then
+  begin
+    // Calling through a routine type variable
+    ANode.ResolvedType := GetResolvedTypeDecl(TCPRoutineTypeNode(TCPTypeDeclNode(
+      TCPExprNode(ANode.Callee).ResolvedType).TypeDef).ReturnType);
   end;
 end;
 
 procedure TCPSemantics.DoAnalyzeTypeCast(const ANode: TCPTypeCastExprNode);
 begin
   if ANode.TargetType <> nil then
-    ANode.TargetType := ResolveTypeExpr(ANode.TargetType);
+    ResolveTypeExpr(ANode.TargetType);
   if ANode.Expr <> nil then
     DoAnalyzeExpr(TCPExprNode(ANode.Expr));
-  ANode.ResolvedType := ANode.TargetType;
+  ANode.ResolvedType := GetResolvedTypeDecl(ANode.TargetType);
 end;
 
 procedure TCPSemantics.DoAnalyzeIntrinsic(const ANode: TCPIntrinsicExprNode);
@@ -1343,7 +1602,7 @@ begin
     ikUtf8:
       ANode.ResolvedType := GetPrimitiveType(tkString);
     ikWStr:
-      ANode.ResolvedType := GetPrimitiveType(tkWString);
+      ANode.ResolvedType := GetPrimitiveType(tkPointer);
     ikCStr:
       ANode.ResolvedType := GetPrimitiveType(tkPointer);
   end;
@@ -1387,7 +1646,7 @@ end;
 
 procedure TCPSemantics.DoAnalyzeTypeRef(const ANode: TCPTypeRefNode);
 begin
-  ANode.ResolvedDecl := ResolveTypeExpr(ANode);
+  ResolveTypeExpr(ANode);
   ANode.ResolvedType := ANode.ResolvedDecl;
 
   // Set CppTypeText for user-defined types (primitives already set by parser)
@@ -1396,72 +1655,63 @@ begin
 end;
 
 // Type resolution and helpers
-function TCPSemantics.ResolveTypeExpr(const ANode: TCPASTNode): TCPASTNode;
+procedure TCPSemantics.ResolveTypeExpr(const ANode: TCPASTNode);
 var
   LDecl: TCPASTNode;
   LRef: TCPTypeRefNode;
+  LPrimitive: TCPTypeDeclNode;
   LName: string;
   LModuleScope: TCPScope;
 begin
-  Result := ANode;
+  if not (ANode is TCPTypeRefNode) then
+    Exit;
 
-  if ANode is TCPTypeRefNode then
+  LRef := TCPTypeRefNode(ANode);
+
+  // Check if it's a primitive type by token kind
+  if LRef.TokenKind <> tkIdentifier then
   begin
-    LRef := TCPTypeRefNode(ANode);
-
-    // Check if it's a primitive type by token kind
-    if LRef.TokenKind <> tkIdentifier then
+    if FPrimitiveTypes.TryGetValue(LRef.TokenKind, LPrimitive) then
+      LRef.ResolvedDecl := LPrimitive;
+  end
+  // Qualified access: ModuleName.TypeName
+  else if Length(LRef.QualParts) = 2 then
+  begin
+    if FModuleScopes.TryGetValue(LRef.QualParts[0], LModuleScope) then
     begin
-      if FPrimitiveTypes.TryGetValue(LRef.TokenKind, TCPTypeDeclNode(Result)) then
-        Exit;
+      LDecl := LModuleScope.LookupLocal(LRef.QualParts[1]);
+      if LDecl = nil then
+        FErrors.Add(ANode.Location, esError, CP_ERR_SEM_001,
+          'Type not found in module %s: %s', [LRef.QualParts[0], LRef.QualParts[1]])
+      else if (LDecl is TCPDeclNode) and (not TCPDeclNode(LDecl).IsPublic) then
+        FErrors.Add(ANode.Location, esError, CP_ERR_SEM_008,
+          'Type %s.%s is not public', [LRef.QualParts[0], LRef.QualParts[1]])
+      else
+        LRef.ResolvedDecl := LDecl;
     end;
-
-    // Qualified access: ModuleName.TypeName
-    if Length(LRef.QualParts) = 2 then
-    begin
-      if FModuleScopes.TryGetValue(LRef.QualParts[0], LModuleScope) then
-      begin
-        LDecl := LModuleScope.LookupLocal(LRef.QualParts[1]);
-        if LDecl = nil then
-        begin
-          FErrors.Add(ANode.Location, esError, CP_ERR_SEM_001,
-            'Type not found in module %s: %s', [LRef.QualParts[0], LRef.QualParts[1]]);
-          Exit;
-        end;
-        if (LDecl is TCPDeclNode) and (not TCPDeclNode(LDecl).IsPublic) then
-        begin
-          FErrors.Add(ANode.Location, esError, CP_ERR_SEM_008,
-            'Type %s.%s is not public', [LRef.QualParts[0], LRef.QualParts[1]]);
-          Exit;
-        end;
-        Result := LDecl;
-        Exit;
-      end;
-    end;
-
-    // Unqualified: single name lookup
-    if Length(LRef.QualParts) = 1 then
-      LName := LRef.QualParts[0]
-    else
-      LName := '';
-
-    if LName = '' then
-      Exit;
-
+  end
+  // Unqualified: single name lookup
+  else if (Length(LRef.QualParts) = 1) and (LRef.QualParts[0] <> '') then
+  begin
+    LName := LRef.QualParts[0];
     LDecl := FCurrentScope.Lookup(LName);
     if LDecl = nil then
-    begin
       FErrors.Add(ANode.Location, esError, CP_ERR_SEM_001,
-        'Undeclared type: %s', [LName]);
-      Exit;
-    end;
-
-    if (LDecl is TCPTypeDeclNode) or (LDecl is TCPForwardTypeDeclNode) then
-      Result := LDecl
+        'Undeclared type: %s', [LName])
+    else if (LDecl is TCPTypeDeclNode) or (LDecl is TCPForwardTypeDeclNode) then
+      LRef.ResolvedDecl := LDecl
     else
       FErrors.Add(ANode.Location, esError, CP_ERR_SEM_003,
         '%s is not a type', [LName]);
   end;
+end;
+
+function TCPSemantics.GetResolvedTypeDecl(const ANode: TCPASTNode): TCPASTNode;
+begin
+  if ANode is TCPTypeRefNode then
+    Result := TCPTypeRefNode(ANode).ResolvedDecl
+  else
+    Result := ANode;
 end;
 
 function TCPSemantics.IsAssignableFrom(const ATarget: TCPASTNode;
@@ -1501,6 +1751,25 @@ begin
 
   // float32 -> float64
   if IsFloatType(ATarget) and IsFloatType(ASource) then
+  begin
+    Result := True;
+    Exit;
+  end;
+
+  // Routine type: source is a routine decl, target is a routine type
+  if (ATarget is TCPTypeDeclNode) and
+     (TCPTypeDeclNode(ATarget).TypeDef is TCPRoutineTypeNode) and
+     (ASource is TCPRoutineDeclNode) then
+  begin
+    Result := True;
+    Exit;
+  end;
+
+  // Routine type: both are the same routine type (var-to-var assignment)
+  if (ATarget is TCPTypeDeclNode) and
+     (TCPTypeDeclNode(ATarget).TypeDef is TCPRoutineTypeNode) and
+     (ASource is TCPTypeDeclNode) and
+     (TCPTypeDeclNode(ASource).TypeDef is TCPRoutineTypeNode) then
   begin
     Result := True;
     Exit;
@@ -1596,6 +1865,8 @@ function TCPSemantics.IsPointerType(const AType: TCPASTNode): Boolean;
 begin
   Result := (AType = GetPrimitiveType(tkPointer));
   // Also check for typed pointers (pointer to T)
+  if not Result then
+    Result := AType is TCPPointerTypeNode;
   if (not Result) and (AType is TCPTypeDeclNode) then
     Result := TCPTypeDeclNode(AType).TypeDef is TCPPointerTypeNode;
 end;

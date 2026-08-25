@@ -88,6 +88,7 @@ type
     function DoScanWStringLiteral(): TCPToken;
     function DoScanDirective(): TCPToken;
     function DoScanOperator(): TCPToken;
+    procedure DoScanRawBlock();
     function DoProcessEscapeSeq(): Char;
 
     // Internal registration
@@ -202,7 +203,10 @@ begin
   AddKeyword('clink',        tkCLink,        tcKeyword);
   AddKeyword('const',        tkConst,        tcKeyword);
   AddKeyword('continue',     tkContinue,     tcKeyword);
+  AddKeyword('cpp',          tkCpp,          tcKeyword);
+  AddKeyword('cppend',       tkCppEnd,       tcKeyword);
   AddKeyword('cpplink',      tkCppLink,      tcKeyword);
+  AddKeyword('cppstart',     tkCppStart,     tcKeyword);
   AddKeyword('create',       tkCreate,       tcKeyword);
   AddKeyword('cstr',         tkCStr,         tcKeyword);
   AddKeyword('destroy',      tkDestroy,      tcKeyword);
@@ -1052,6 +1056,103 @@ begin
   Result.Location := MakeLocation(LStartLine, LStartCol);
 end;
 
+{ TCPLexer.DoScanRawBlock }
+procedure TCPLexer.DoScanRawBlock();
+var
+  LRawBuf: string;
+  LRawStartLine: UInt64;
+  LRawStartCol: UInt64;
+  LEndWord: string;
+  LEndLen: Integer;
+  LFoundEnd: Boolean;
+  LI: Integer;
+  LAfterEnd: Char;
+  LEndKwLine: UInt64;
+  LEndKwCol: UInt64;
+  LToken: TCPToken;
+begin
+  LEndWord := 'cppend';
+  LEndLen := Length(LEndWord);
+
+  // Skip whitespace before raw content
+  while not IsAtSourceEnd() and CharInSet(CurrentChar(), [' ', #9, #13, #10]) do
+  begin
+    if CurrentChar() = #10 then
+    begin
+      Inc(FLine);
+      FCol := 1;
+    end
+    else
+      Inc(FCol);
+    Inc(FPos);
+  end;
+
+  LRawBuf := '';
+  LRawStartLine := FLine;
+  LRawStartCol := FCol;
+
+  while not IsAtSourceEnd() do
+  begin
+    // Check if current position starts with the end keyword
+    LFoundEnd := True;
+    for LI := 0 to LEndLen - 1 do
+    begin
+      if (FPos + LI > Length(FSource)) or
+         (FSource[FPos + LI] <> LEndWord[LI + 1]) then
+      begin
+        LFoundEnd := False;
+        Break;
+      end;
+    end;
+
+    // Verify end keyword is a standalone word
+    if LFoundEnd then
+    begin
+      if (FPos + LEndLen) <= Length(FSource) then
+        LAfterEnd := FSource[FPos + LEndLen]
+      else
+        LAfterEnd := ' ';
+
+      if not CharInSet(LAfterEnd, ['A'..'Z', 'a'..'z', '0'..'9', '_']) then
+      begin
+        // Emit the raw block token with trimmed text
+        LToken.Clear();
+        LToken.Kind := tkRawBlock;
+        LToken.TokenText := LRawBuf.TrimRight();
+        LToken.RawText := LRawBuf;
+        LToken.LeadingTrivia := '';
+        LToken.Location := MakeLocation(LRawStartLine, LRawStartCol);
+        LToken.Category := tcLiteral;
+        FTokens.Add(LToken);
+
+        // Emit the cppend keyword token
+        LEndKwLine := FLine;
+        LEndKwCol := FCol;
+        for LI := 1 to LEndLen do
+          Advance();
+
+        LToken.Clear();
+        LToken.Kind := tkCppEnd;
+        LToken.TokenText := LEndWord;
+        LToken.RawText := LEndWord;
+        LToken.LeadingTrivia := '';
+        LToken.Location := MakeLocation(LEndKwLine, LEndKwCol);
+        LToken.Category := tcKeyword;
+        FTokens.Add(LToken);
+        Exit;
+      end;
+    end;
+
+    // Accumulate raw character
+    LRawBuf := LRawBuf + CurrentChar();
+    Advance();
+  end;
+
+  // Reached end of source without finding cppend
+  FErrors.Add(FFilename, LRawStartLine, LRawStartCol, esError,
+    CP_ERR_LEX_003, 'Unterminated cppstart block, expected ''cppend''', []);
+end;
+
 function TCPLexer.DoScanToken(const ATrivia: string): TCPToken;
 var
   LCh: Char;
@@ -1144,6 +1245,11 @@ begin
     end;
     LToken := DoScanToken(LTrivia);
     FTokens.Add(LToken);
+
+    // Raw block capture: when cppstart is encountered, collect verbatim
+    // text until cppend appears as a standalone word
+    if LToken.Kind = tkCppStart then
+      DoScanRawBlock();
   end;
 
   // Ensure EOF token always present

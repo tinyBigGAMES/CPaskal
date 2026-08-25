@@ -77,7 +77,7 @@ begin
         TConsole.Print(ALine);
       end, nil);
 
-    LSourceFile := TUtils.ResolvePath('$P:res\tests\hello');
+    LSourceFile := TUtils.ResolvePath('$P:res\tests\bnf_compliance');
     LOutputPath := TUtils.ResolvePath('$P:output');
 
     TConsole.PrintLn('Source: %s', [LSourceFile]);
@@ -102,8 +102,8 @@ end;
 procedure RunTestbed();
 begin
   try
-    //Test01();
-    Menu();
+    Test01();
+    //Menu();
   except
     on E: Exception do
     begin
