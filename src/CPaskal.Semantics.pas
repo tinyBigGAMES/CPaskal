@@ -1159,18 +1159,12 @@ end;
 
 procedure TCPSemantics.DoAnalyzeReturn(const ANode: TCPReturnNode);
 begin
-  if FCurrentRoutine = nil then
-  begin
-    FErrors.Add(ANode.Location, esError, CP_ERR_SEM_006,
-      'Return statement outside of a routine');
-    Exit;
-  end;
-
   if ANode.ValueExpr <> nil then
   begin
     DoAnalyzeExpr(TCPExprNode(ANode.ValueExpr));
-    // Check return type matches
-    if (FCurrentRoutine.ReturnType <> nil) and
+    // Check return type matches (only inside a routine with a declared return type)
+    if (FCurrentRoutine <> nil) and
+       (FCurrentRoutine.ReturnType <> nil) and
        (TCPExprNode(ANode.ValueExpr).ResolvedType <> nil) then
     begin
       if not IsAssignableFrom(GetResolvedTypeDecl(FCurrentRoutine.ReturnType),
@@ -1179,7 +1173,7 @@ begin
           'Return value type does not match function return type');
     end;
   end
-  else if FCurrentRoutine.ReturnType <> nil then
+  else if (FCurrentRoutine <> nil) and (FCurrentRoutine.ReturnType <> nil) then
     FErrors.Add(ANode.Location, esError, CP_ERR_SEM_003,
       'Function requires a return value');
 end;
