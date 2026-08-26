@@ -82,6 +82,8 @@ type
     function Expect(const AKind: TCPTokenKind): TCPToken;
     function Check(const AKind: TCPTokenKind): Boolean;
     procedure OptionalSemicolon();
+    procedure ExpectBlockEnd(const AConstruct: string;
+      const AStartLocation: TSourceRange);
 
     // Precedence
     function GetPrecedence(const AKind: TCPTokenKind): Integer;
@@ -262,6 +264,16 @@ end;
 procedure TCPParser.OptionalSemicolon();
 begin
   Match(tkSemicolon);
+end;
+
+{ TCPParser.ExpectBlockEnd }
+procedure TCPParser.ExpectBlockEnd(const AConstruct: string;
+  const AStartLocation: TSourceRange);
+begin
+  if not Match(tkEnd) then
+    FErrors.Add(Current().Location, esError, CP_ERR_PAR_002,
+      'Expected "end" to close "%s" started at line %d',
+      [AConstruct, AStartLocation.StartLine]);
 end;
 
 // -- Precedence helpers -----------------------------------------------------
@@ -1108,10 +1120,30 @@ begin
   if Match(tkExternal) then
   begin
     Result.IsExternal := True;
-    if (Current().Kind = tkStringLiteral) or (Current().Kind = tkIdentifier) then
+    // Optional library: string literal or identifier (but not "name" followed by string)
+    if Current().Kind = tkStringLiteral then
     begin
       Result.ExternalLib := Current().TokenText;
       Consume();
+    end
+    else if (Current().Kind = tkIdentifier) and
+            not ((Current().TokenText = 'name') and (PeekAt(1).Kind = tkStringLiteral)) then
+    begin
+      Result.ExternalLib := Current().TokenText;
+      Consume();
+    end;
+    // Optional name clause: name "symbol"
+    if (Current().Kind = tkIdentifier) and (Current().TokenText = 'name') then
+    begin
+      Consume();
+      if Current().Kind = tkStringLiteral then
+      begin
+        Result.ExternalName := Current().TokenText;
+        Consume();
+      end
+      else
+        FErrors.Add(Current().Location, esError, CP_ERR_PAR_002,
+          'Expected string literal after "name"');
     end;
     Expect(tkSemicolon);
   end;
@@ -1164,10 +1196,30 @@ begin
   if Match(tkExternal) then
   begin
     Result.IsExternal := True;
-    if (Current().Kind = tkStringLiteral) or (Current().Kind = tkIdentifier) then
+    // Optional library: string literal or identifier (but not "name" followed by string)
+    if Current().Kind = tkStringLiteral then
     begin
       Result.ExternalLib := Current().TokenText;
       Consume();
+    end
+    else if (Current().Kind = tkIdentifier) and
+            not ((Current().TokenText = 'name') and (PeekAt(1).Kind = tkStringLiteral)) then
+    begin
+      Result.ExternalLib := Current().TokenText;
+      Consume();
+    end;
+    // Optional name clause: name "symbol"
+    if (Current().Kind = tkIdentifier) and (Current().TokenText = 'name') then
+    begin
+      Consume();
+      if Current().Kind = tkStringLiteral then
+      begin
+        Result.ExternalName := Current().TokenText;
+        Consume();
+      end
+      else
+        FErrors.Add(Current().Location, esError, CP_ERR_PAR_002,
+          'Expected string literal after "name"');
     end;
     Expect(tkSemicolon);
   end
@@ -1884,8 +1936,12 @@ begin
     Result := DoParseAssignOrCall()
   else
   begin
-    FErrors.Add(Current().Location, esError, CP_ERR_PAR_006,
-      'Unexpected token in statement: %s', [Current().TokenText]);
+    if Check(tkDot) then
+      FErrors.Add(Current().Location, esError, CP_ERR_PAR_006,
+        'Unexpected end of module -- likely a missing "end" for an if, while, for, match, or guard block')
+    else
+      FErrors.Add(Current().Location, esError, CP_ERR_PAR_006,
+        'Unexpected token in statement: %s', [Current().TokenText]);
     Consume();
   end;
 end;
@@ -1946,7 +2002,7 @@ begin
     LBody.Free();
   end;
 
-  Expect(tkEnd);
+  ExpectBlockEnd('if', Result.Location);
   OptionalSemicolon();
 end;
 
@@ -1966,7 +2022,7 @@ begin
   LBody.OwnsObjects := False;
   LBody.Free();
 
-  Expect(tkEnd);
+  ExpectBlockEnd('while', Result.Location);
   OptionalSemicolon();
 end;
 
@@ -2005,7 +2061,7 @@ begin
   LBody.OwnsObjects := False;
   LBody.Free();
 
-  Expect(tkEnd);
+  ExpectBlockEnd('for', Result.Location);
   OptionalSemicolon();
 end;
 
@@ -2050,7 +2106,7 @@ begin
     LBody.Free();
   end;
 
-  Expect(tkEnd);
+  ExpectBlockEnd('match', Result.Location);
   OptionalSemicolon();
 end;
 
@@ -2153,7 +2209,7 @@ begin
     LBody.Free();
   end;
 
-  Expect(tkEnd);
+  ExpectBlockEnd('guard', Result.Location);
   OptionalSemicolon();
 end;
 

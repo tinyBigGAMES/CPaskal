@@ -28,6 +28,7 @@ uses
   System.Generics.Collections,
   System.Rtti,
   StdApp.Base,
+  StdApp.Resources,
   CPaskal.Common,
   CPaskal.AST;
 
@@ -52,6 +53,10 @@ const
   CP_ERR_SEM_017 = 'SEM017';  // Invalid array bounds
   CP_ERR_SEM_018 = 'SEM018';  // Duplicate field name
   CP_ERR_SEM_019 = 'SEM019';  // Duplicate choices value
+  CP_ERR_SEM_020 = 'SEM020';  // External declaration error
+  CP_ERR_SEM_021 = 'SEM021';  // Invalid module kind
+  CP_ERR_SEM_022 = 'SEM022';  // Module body violation (missing or forbidden begin)
+  CP_ERR_SEM_023 = 'SEM023';  // Invalid directive value
 
 type
   { TCPScopeKind }
@@ -122,6 +127,10 @@ type
     procedure DoAnalyzeRoutineType(const ANode: TCPRoutineTypeNode);
     procedure DoAnalyzeAnonOverlay(const ANode: TCPAnonOverlayNode);
     procedure DoAnalyzeAnonRecord(const ANode: TCPAnonRecordNode);
+
+    // External clause helpers
+    function DoResolveExternalString(const ARawText: string;
+      const ALocation: TSourceRange): string;
 
     // Statement analysis
     procedure DoAnalyzeStatement(const ANode: TCPASTNode);
@@ -396,9 +405,64 @@ end;
 procedure TCPSemantics.DoAnalyzeModule(const AModule: TCPModuleNode);
 var
   LScope: TCPScope;
+  LDir: TCPDirectiveNode;
+  LTarget: TCPTargetPlatform;
   I: Integer;
 begin
   FCurrentModule := AModule;
+
+  // Validate module kind
+  if not (AModule.ModuleKind in [mkExe, mkDll, mkLib, mkUnit]) then
+  begin
+    FErrors.Add(AModule.Location, esError, CP_ERR_SEM_021,
+      RSSemInvalidModuleKind, []);
+    Exit;
+  end;
+
+  // Validate begin...end body rules
+  if AModule.ModuleKind = mkExe then
+  begin
+    // exe must have an entry point
+    if AModule.MainBody.Count = 0 then
+      FErrors.Add(AModule.Location, esError, CP_ERR_SEM_022,
+        RSSemExeMissingMain, []);
+  end
+  else
+  begin
+    // dll, lib, unit must NOT have a begin...end block
+    if AModule.MainBody.Count > 0 then
+    begin
+      if AModule.ModuleKind = mkDll then
+        FErrors.Add(AModule.Location, esError, CP_ERR_SEM_022,
+          RSSemMainBodyForbidden, ['dll'])
+      else if AModule.ModuleKind = mkLib then
+        FErrors.Add(AModule.Location, esError, CP_ERR_SEM_022,
+          RSSemMainBodyForbidden, ['lib'])
+      else
+        FErrors.Add(AModule.Location, esError, CP_ERR_SEM_022,
+          RSSemMainBodyForbidden, ['unit']);
+    end;
+  end;
+
+  // Resolve directives (main module only)
+  if AModule = FMasterAST.Modules[0] then
+  begin
+    for I := 0 to AModule.Directives.Count - 1 do
+    begin
+      LDir := AModule.Directives[I];
+      if LDir.DirectiveName.ToLower() = 'target' then
+      begin
+        if cpTryParseTarget(LDir.DirectiveValue, LTarget) then
+        begin
+          AModule.ResolvedTarget := LTarget;
+          AModule.ResolvedTargetTriple := cpTargetTriple(LTarget);
+        end
+        else
+          FErrors.Add(LDir.Location, esError, CP_ERR_SEM_023,
+            RSSemInvalidTarget, [LDir.DirectiveValue]);
+      end;
+    end;
+  end;
 
   // Create module scope
   LScope := PushScope(skModule);
@@ -532,6 +596,46 @@ begin
     DoAnalyzeTypeDef(ANode.TypeDef);
 end;
 
+{ TCPSemantics.DoResolveExternalString }
+function TCPSemantics.DoResolveExternalString(const ARawText: string;
+  const ALocation: TSourceRange): string;
+var
+  LNode: TCPASTNode;
+  LConst: TCPConstDeclNode;
+begin
+  // String literal: strip quotes
+  if ARawText.StartsWith('"') then
+    Result := ARawText.DeQuotedString('"')
+  else
+  begin
+    // Identifier: resolve to const string value
+    LNode := FCurrentScope.Lookup(ARawText);
+    if LNode = nil then
+    begin
+      FErrors.Add(ALocation, esError, CP_ERR_SEM_001,
+        'Undeclared identifier in external clause: %s', [ARawText]);
+      Result := ARawText;
+      Exit;
+    end;
+    if not (LNode is TCPConstDeclNode) then
+    begin
+      FErrors.Add(ALocation, esError, CP_ERR_SEM_020,
+        'External clause identifier must be a const: %s', [ARawText]);
+      Result := ARawText;
+      Exit;
+    end;
+    LConst := TCPConstDeclNode(LNode);
+    if not (LConst.ValueExpr is TCPStringLiteralNode) then
+    begin
+      FErrors.Add(ALocation, esError, CP_ERR_SEM_020,
+        'External clause const must be a string: %s', [ARawText]);
+      Result := ARawText;
+      Exit;
+    end;
+    Result := TCPStringLiteralNode(LConst.ValueExpr).StringValue;
+  end;
+end;
+
 procedure TCPSemantics.DoAnalyzeVarDecl(const ANode: TCPVarDeclNode);
 begin
   FCurrentScope.Declare(ANode.DeclName, ANode, ANode.Location);
@@ -539,6 +643,22 @@ begin
   // Resolve the type expression
   if ANode.TypeExpr <> nil then
     ResolveTypeExpr(ANode.TypeExpr);
+
+  // External vars must not have initializers
+  if ANode.IsExternal and (ANode.InitExpr <> nil) then
+  begin
+    FErrors.Add(ANode.Location, esError, CP_ERR_SEM_020,
+      'External variable cannot have an initializer: %s', [ANode.DeclName]);
+    Exit;
+  end;
+
+  // Enrich external lib name (resolve string literal or const identifier)
+  if ANode.IsExternal and (ANode.ExternalLib <> '') then
+    ANode.ResolvedExternalLib := DoResolveExternalString(ANode.ExternalLib, ANode.Location);
+
+  // Enrich external symbol name (always a string literal)
+  if ANode.IsExternal and (ANode.ExternalName <> '') then
+    ANode.ResolvedExternalName := ANode.ExternalName.DeQuotedString('"');
 
   // Analyze initializer if present
   if ANode.InitExpr <> nil then
@@ -609,7 +729,15 @@ begin
 
   // External routines have no body to analyze
   if ANode.IsExternal then
+  begin
+    // Enrich external lib name (resolve string literal or const identifier)
+    if ANode.ExternalLib <> '' then
+      ANode.ResolvedExternalLib := DoResolveExternalString(ANode.ExternalLib, ANode.Location);
+    // Enrich external symbol name (always a string literal)
+    if ANode.ExternalName <> '' then
+      ANode.ResolvedExternalName := ANode.ExternalName.DeQuotedString('"');
     Exit;
+  end;
 
   // Push routine scope
   LScope := PushScope(skRoutine);

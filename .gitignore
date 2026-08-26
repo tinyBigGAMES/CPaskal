@@ -93,3 +93,6 @@ distro.yml
 /bin/res/zig
 bin/cpas.txt
 bin/build.toml
+/distro
+bin/res/tests/probe.cpas
+bin/res/tests/probe_usedll.cpas

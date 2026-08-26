@@ -339,6 +339,17 @@ begin
   if AModule.Imports.Count > 0 then
     FOutput.BlankLine(otHeader);
 
+  // DLL export macro
+  if AModule.ModuleKind = mkDll then
+  begin
+    FOutput.EmitLine('#ifdef _WIN32', otHeader);
+    FOutput.EmitLine('#define CP_EXPORT __declspec(dllexport)', otHeader);
+    FOutput.EmitLine('#else', otHeader);
+    FOutput.EmitLine('#define CP_EXPORT __attribute__((visibility("default")))', otHeader);
+    FOutput.EmitLine('#endif', otHeader);
+    FOutput.BlankLine(otHeader);
+  end;
+
   // Source preamble
   FOutput.EmitLine('#include "' + AModule.ModuleName + '.h"', otSource);
   FOutput.BlankLine(otSource);
@@ -591,6 +602,7 @@ procedure TCPCodegen.EmitVarDecl(const ANode: TCPVarDeclNode);
 var
   LType: string;
   LInit: string;
+  LAsm: string;
 begin
   LType := EmitTypeExpr(ANode.TypeExpr);
 
@@ -604,14 +616,25 @@ begin
 
   if ANode.IsExternal then
   begin
-    // External variable: extern "C" type name;
-    FOutput.EmitLine('extern "C" ' + LType + ' ' + ANode.DeclName + ';', otHeader);
+    // External variable: extern "C" type name [__asm__("sym")];
+    LAsm := '';
+    if ANode.ResolvedExternalName <> '' then
+      LAsm := ' __asm__("' + ANode.ResolvedExternalName + '")';
+    FOutput.EmitLine('extern "C" ' + LType + ' ' + ANode.DeclName + LAsm + ';', otHeader);
   end
   else if ANode.IsPublic then
   begin
     // Public: extern in header, definition in source
-    FOutput.EmitLine('extern ' + LType + ' ' + ANode.DeclName + ';', otHeader);
-    FOutput.EmitLine(LType + ' ' + ANode.DeclName + LInit + ';', otSource);
+    if FCurrentModule.ModuleKind = mkDll then
+    begin
+      FOutput.EmitLine('extern "C" CP_EXPORT ' + LType + ' ' + ANode.DeclName + ';', otHeader);
+      FOutput.EmitLine('extern "C" ' + LType + ' ' + ANode.DeclName + LInit + ';', otSource);
+    end
+    else
+    begin
+      FOutput.EmitLine('extern ' + LType + ' ' + ANode.DeclName + ';', otHeader);
+      FOutput.EmitLine(LType + ' ' + ANode.DeclName + LInit + ';', otSource);
+    end;
   end
   else
   begin
@@ -624,6 +647,7 @@ procedure TCPCodegen.EmitRoutineDecl(const ANode: TCPRoutineDeclNode);
 var
   LRetType: string;
   LSig: string;
+  LAsm: string;
   I: Integer;
   LParam: TCPParamDeclNode;
   LParamType: string;
@@ -645,7 +669,7 @@ begin
     if LParam.ParamMode = pmVar then
       LParamType := LParamType + '&'
     else if LParam.ParamMode = pmConst then
-      LParamType := 'const ' + LParamType + '&';
+      LParamType := 'const ' + LParamType;
 
     if I > 0 then
       LSig := LSig + ', ';
@@ -663,17 +687,32 @@ begin
   // External routine
   if ANode.IsExternal then
   begin
+    LAsm := '';
+    if ANode.ResolvedExternalName <> '' then
+      LAsm := ' __asm__("' + ANode.ResolvedExternalName + '")';
     if ANode.Linkage = lkCppLink then
-      FOutput.EmitLine(LRetType + ' ' + ANode.DeclName + '(' + LSig + ');', otHeader)
+      FOutput.EmitLine(LRetType + ' ' + ANode.DeclName + '(' + LSig + ')' + LAsm + ';', otHeader)
     else
       FOutput.EmitLine('extern "C" ' + LRetType + ' ' + ANode.DeclName +
-        '(' + LSig + ');', otHeader);
+        '(' + LSig + ')' + LAsm + ';', otHeader);
     Exit;
   end;
 
   // Public: prototype in header
   if ANode.IsPublic then
-    FOutput.EmitLine(LRetType + ' ' + ANode.DeclName + '(' + LSig + ');', otHeader);
+  begin
+    if FCurrentModule.ModuleKind = mkDll then
+    begin
+      if ANode.Linkage = lkCLink then
+        FOutput.EmitLine('extern "C" CP_EXPORT ' + LRetType + ' ' +
+          ANode.DeclName + '(' + LSig + ');', otHeader)
+      else
+        FOutput.EmitLine('CP_EXPORT ' + LRetType + ' ' +
+          ANode.DeclName + '(' + LSig + ');', otHeader);
+    end
+    else
+      FOutput.EmitLine(LRetType + ' ' + ANode.DeclName + '(' + LSig + ');', otHeader);
+  end;
 
   // Function body in source
   FOutput.BlankLine(otSource);

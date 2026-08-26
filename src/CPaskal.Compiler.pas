@@ -36,6 +36,7 @@ uses
   Winapi.Windows,
   StdApp.Base,
   StdApp.Utils,
+  StdApp.Resources,
   CPaskal.Common,
   CPaskal.AST,
   CPaskal.Parser,
@@ -46,6 +47,9 @@ uses
 const
   { CP_ERR_CMP_001 }
   CP_ERR_CMP_001 = 'CMP001';  // Source file not found
+
+  { CP_ERR_CMP_002 }
+  CP_ERR_CMP_002 = 'CMP002';  // Cannot auto-run
 
 type
 
@@ -88,6 +92,9 @@ type
     procedure DoSetupPlatformDefines();
     procedure DoCLIDirectives();
     function DoValidateUnitModule(): Boolean;
+    procedure DoCollectExternalLibs();
+    procedure DoSetBuildMode();
+    function DoValidateAutoRun(): Boolean;
   public
     constructor Create(); override;
     destructor Destroy(); override;
@@ -133,6 +140,7 @@ type
     // Link libraries
     procedure AddLinkLibrary(const ALibrary: string);
     procedure AddLinkLibraries(const ALibraries: array of string);
+    procedure AddLibraryPath(const APath: string);
 
     // Post-build
     procedure AddCopyDLL(const ADLLPath: string);
@@ -316,17 +324,9 @@ begin
 
     if LName = 'target' then
     begin
-      if (LValue = 'win64') or (LValue = 'x86_64_windows') then
-        SetTarget('x86_64-windows-gnu')
-      else if (LValue = 'linux64') or (LValue = 'x86_64_linux') then
-        SetTarget('x86_64-linux-gnu')
-      else if LValue.Contains('-') then
-        // Raw zig triple passthrough (e.g. x86_64-linux-gnu)
-        SetTarget(LDir.DirectiveValue)
-      else
-        FErrors.Add(LDir.Location, esWarning, CP_ERR_CMP_001,
-          'Unknown @target value ''%s''; expected win64, linux64, or a zig target triple',
-          [LDir.DirectiveValue]);
+      // Target is resolved by semantics -- read from AST
+      if LMainModule.ResolvedTargetTriple <> '' then
+        SetTarget(LMainModule.ResolvedTargetTriple);
     end
     else if LName = 'subsystem' then
     begin
@@ -353,6 +353,10 @@ begin
         FErrors.Add(LDir.Location, esWarning, CP_ERR_CMP_001,
           'Unknown @optimize value ''%s''; expected debug, release-safe, release-fast, or release-small',
           [LDir.DirectiveValue]);
+    end
+    else if LName = 'librarypath' then
+    begin
+      FZigBuild.AddLibraryPath(LDir.DirectiveValue);
     end;
     // @modulepath handled during import resolution (not here)
   end;
@@ -407,11 +411,17 @@ end;
 procedure TCPCompiler.DoCLIDirectives();
 var
   LValue: string;
+  LTarget: TCPTargetPlatform;
 begin
   // Apply CLI overrides from key-value store -- these override source directives
   LValue := GetKeyValue('target');
   if LValue <> '' then
-    SetTarget(LValue);
+  begin
+    if cpTryParseTarget(LValue, LTarget) then
+      SetTarget(cpTargetTriple(LTarget))
+    else
+      SetTarget(LValue); // raw zig triple passthrough from CLI
+  end;
 
   LValue := GetKeyValue('optimize');
   if LValue <> '' then
@@ -460,6 +470,84 @@ begin
   FPreBuildCallbacks.Clear();
 end;
 
+{ TCPCompiler.DoCollectExternalLibs }
+procedure TCPCompiler.DoCollectExternalLibs();
+var
+  LModIdx: Integer;
+  LDeclIdx: Integer;
+  LModule: TCPModuleNode;
+  LDecl: TCPASTNode;
+  LLib: string;
+begin
+  for LModIdx := 0 to FMasterAST.Modules.Count - 1 do
+  begin
+    LModule := FMasterAST.Modules[LModIdx];
+    for LDeclIdx := 0 to LModule.Declarations.Count - 1 do
+    begin
+      LDecl := LModule.Declarations[LDeclIdx];
+
+      LLib := '';
+      if (LDecl is TCPRoutineDeclNode) and TCPRoutineDeclNode(LDecl).IsExternal then
+        LLib := TCPRoutineDeclNode(LDecl).ResolvedExternalLib
+      else if (LDecl is TCPVarDeclNode) and TCPVarDeclNode(LDecl).IsExternal then
+        LLib := TCPVarDeclNode(LDecl).ResolvedExternalLib;
+
+      if LLib <> '' then
+        FZigBuild.AddLinkLibrary(LLib);
+    end;
+  end;
+end;
+
+{ TCPCompiler.DoSetBuildMode }
+procedure TCPCompiler.DoSetBuildMode();
+var
+  LModuleKind: TCPModuleKind;
+begin
+  LModuleKind := FMasterAST.Modules[0].ModuleKind;
+  case LModuleKind of
+    mkExe: FZigBuild.SetBuildMode(bmExe);
+    mkDll: FZigBuild.SetBuildMode(bmDll);
+    mkLib: FZigBuild.SetBuildMode(bmLib);
+  end;
+  // mkUnit never reaches here -- DoValidateUnitModule exits earlier
+end;
+
+{ TCPCompiler.DoValidateAutoRun }
+function TCPCompiler.DoValidateAutoRun(): Boolean;
+var
+  LModuleKind: TCPModuleKind;
+  LTarget: string;
+begin
+  Result := True;
+  LModuleKind := FMasterAST.Modules[0].ModuleKind;
+
+  // Only exe modules can be run
+  if LModuleKind <> mkExe then
+  begin
+    if LModuleKind = mkDll then
+      FErrors.Add(FMasterAST.Modules[0].Location, esError, CP_ERR_CMP_002,
+        RSSemCannotRunModule, ['dll'])
+    else if LModuleKind = mkLib then
+      FErrors.Add(FMasterAST.Modules[0].Location, esError, CP_ERR_CMP_002,
+        RSSemCannotRunModule, ['lib'])
+    else
+      FErrors.Add(FMasterAST.Modules[0].Location, esError, CP_ERR_CMP_002,
+        RSSemCannotRunModule, ['unit']);
+    Result := False;
+    Exit;
+  end;
+
+  // Only native targets can be run
+  LTarget := FZigBuild.GetTarget();
+  if (LTarget <> cpTargetTriple(tpX86_64_Windows)) and
+     (LTarget <> cpTargetTriple(tpX86_64_Linux)) then
+  begin
+    FErrors.Add(FMasterAST.Modules[0].Location, esError, CP_ERR_CMP_002,
+      RSSemCannotRunTarget, [LTarget]);
+    Result := False;
+  end;
+end;
+
 { TCPCompiler.DoValidateUnitModule }
 function TCPCompiler.DoValidateUnitModule(): Boolean;
 begin
@@ -479,11 +567,13 @@ var
   LProjectName: string;
   LSourceFile: string;
   LSourceDir: string;
+  LAutoRun: Boolean;
   LModule: TCPModuleNode;
   LPendingName: string;
   LPendingFile: string;
   I: Integer;
 begin
+  LAutoRun := AAutoRun;
   FErrors.Clear();
   FreeAndNil(FMasterAST);
   FMasterAST := TCPMasterAST.Create();
@@ -583,6 +673,9 @@ begin
   if DoValidateUnitModule() then
     Exit;
 
+  // Set build mode from module kind (exe/dll/lib)
+  DoSetBuildMode();
+
   // Phase 3: Code generation
   LGeneratedPath := TPath.Combine(AOutputPath, 'generated');
   TUtils.CreateDirInPath(LGeneratedPath);
@@ -608,8 +701,20 @@ begin
     FZigBuild.AddSourceFile(
       TPath.Combine(LGeneratedPath, FMasterAST.Modules[I].ModuleName + '.cpp'));
 
-  // Build
-  FZigBuild.Process(AAutoRun);
+  // Collect external library references from AST
+  DoCollectExternalLibs();
+
+  // Default library path for exe builds: output/zig-out/bin (where DLLs are built)
+  if FMasterAST.Modules[0].ModuleKind = mkExe then
+    FZigBuild.AddLibraryPath(
+      TPath.Combine(TPath.Combine(AOutputPath, 'zig-out'), 'bin'));
+
+  // Validate auto-run before build
+  if LAutoRun and (not DoValidateAutoRun()) then
+    LAutoRun := False;
+
+  // Build (and optionally run)
+  FZigBuild.Process(LAutoRun);
 end;
 
 function TCPCompiler.Run(): Boolean;
@@ -717,6 +822,12 @@ end;
 procedure TCPCompiler.AddLinkLibraries(const ALibraries: array of string);
 begin
   FZigBuild.AddLinkLibraries(ALibraries);
+end;
+
+{ TCPCompiler.AddLibraryPath }
+procedure TCPCompiler.AddLibraryPath(const APath: string);
+begin
+  FZigBuild.AddLibraryPath(APath);
 end;
 
 procedure TCPCompiler.AddCopyDLL(const ADLLPath: string);

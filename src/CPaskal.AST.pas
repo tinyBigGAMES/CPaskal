@@ -243,6 +243,8 @@ type
     FFinalBody: TObjectList<TCPASTNode>;
     FMainBody: TObjectList<TCPASTNode>;
     FTestBlocks: TObjectList<TCPTestBlockNode>;
+    FResolvedTarget: TCPTargetPlatform;
+    FResolvedTargetTriple: string;
   public
     constructor Create(); override;
     destructor Destroy(); override;
@@ -256,6 +258,8 @@ type
     property FinalBody: TObjectList<TCPASTNode> read FFinalBody;
     property MainBody: TObjectList<TCPASTNode> read FMainBody;
     property TestBlocks: TObjectList<TCPTestBlockNode> read FTestBlocks;
+    property ResolvedTarget: TCPTargetPlatform read FResolvedTarget write FResolvedTarget;
+    property ResolvedTargetTriple: string read FResolvedTargetTriple write FResolvedTargetTriple;
   end;
 
   { TCPDirectiveNode }
@@ -325,12 +329,18 @@ type
     FInitExpr: TCPASTNode;       // nil if no initializer
     FIsExternal: Boolean;
     FExternalLib: string;
+    FResolvedExternalLib: string;
+    FExternalName: string;
+    FResolvedExternalName: string;
   public
     destructor Destroy(); override;
     property TypeExpr: TCPASTNode read FTypeExpr write FTypeExpr;
     property InitExpr: TCPASTNode read FInitExpr write FInitExpr;
     property IsExternal: Boolean read FIsExternal write FIsExternal;
     property ExternalLib: string read FExternalLib write FExternalLib;
+    property ResolvedExternalLib: string read FResolvedExternalLib write FResolvedExternalLib;
+    property ExternalName: string read FExternalName write FExternalName;
+    property ResolvedExternalName: string read FResolvedExternalName write FResolvedExternalName;
   end;
 
   { TCPRoutineDeclNode }
@@ -341,6 +351,9 @@ type
     FReturnType: TCPASTNode;     // nil for procedures
     FIsExternal: Boolean;
     FExternalLib: string;
+    FResolvedExternalLib: string;
+    FExternalName: string;
+    FResolvedExternalName: string;
     FIsVariadic: Boolean;
     FLocalTypes: TObjectList<TCPTypeDeclNode>;
     FLocalConsts: TObjectList<TCPConstDeclNode>;
@@ -354,6 +367,9 @@ type
     property ReturnType: TCPASTNode read FReturnType write FReturnType;
     property IsExternal: Boolean read FIsExternal write FIsExternal;
     property ExternalLib: string read FExternalLib write FExternalLib;
+    property ResolvedExternalLib: string read FResolvedExternalLib write FResolvedExternalLib;
+    property ExternalName: string read FExternalName write FExternalName;
+    property ResolvedExternalName: string read FResolvedExternalName write FResolvedExternalName;
     property IsVariadic: Boolean read FIsVariadic write FIsVariadic;
     property LocalTypes: TObjectList<TCPTypeDeclNode> read FLocalTypes;
     property LocalConsts: TObjectList<TCPConstDeclNode> read FLocalConsts;

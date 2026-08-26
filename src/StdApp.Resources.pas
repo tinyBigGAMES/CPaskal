@@ -344,6 +344,16 @@ resourcestring
   RSLexUnexpectedEOF       = 'Unexpected end of file';
   RSLexExpected            = 'Expected %s, found ''%s''';
 
+  //--------------------------------------------------------------------------
+  // CPaskal Semantics Messages
+  //--------------------------------------------------------------------------
+  RSSemInvalidModuleKind   = 'Invalid module kind: expected exe, dll, lib, or unit';
+  RSSemExeMissingMain      = 'exe module must have a begin...end entry point';
+  RSSemMainBodyForbidden   = '%s module must not have a begin...end block';
+  RSSemInvalidTarget       = 'Invalid @target value ''%s''';
+  RSSemCannotRunModule     = 'Cannot run a %s module -- only exe modules can be run';
+  RSSemCannotRunTarget     = 'Cannot run target ''%s'' -- not a native executable target';
+
 implementation
 
 end.

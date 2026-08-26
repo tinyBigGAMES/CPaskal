@@ -1,7 +1,7 @@
 
 module exe bnf_compliance;
 
-@target x86_64_linux;
+//@target x86_64_linux;
 //@target x86_64_windows;
 
 // Phase 23: Module features -- import
@@ -222,6 +222,22 @@ routine ovl_add(a: int32; b: int32; c: int32): int32;
 begin
   return a + b + c;
 end;
+
+// Phase 29: External clause declarations (FFI binding)
+const EXT_LIB_C = "c";
+routine clink myabs(const n: int32): int32; external "c" name "abs";
+routine clink mytoupper(const c: int32): int32; external EXT_LIB_C name "toupper";
+routine clink myabs2(const n: int32): int32; external name "abs";
+@ifdef TARGET_WIN64
+const EXT_WIN_LIB = "kernel32";
+routine clink GetTick(): uint64; external "kernel32" name "GetTickCount64";
+routine clink GetTick2(): uint64; external EXT_WIN_LIB name "GetTickCount64";
+@endif
+@ifdef TARGET_LINUX64
+routine clink ext_getpid(): int32; external "c" name "getpid";
+@endif
+
+// Phase 24: C++ interop -- cppstart/cppend, cpp()
 
 cppstart header
 #include <iostream>
@@ -1003,6 +1019,9 @@ begin
   @ifdef TARGET_LINUX64
     cc_result := cc_result + 1;
   @endif
+  @ifdef TARGET_WIN64
+    cc_result := cc_result + 1;
+  @endif
 
   // Module kind defines
   @ifdef BUILD_EXE
@@ -1011,6 +1030,50 @@ begin
 
   println("conditional compilation: {} / 9 passed", cc_result);
   asserteq(cc_result, 9, "conditional compilation");
+
+  // Phase 29: External Clause (FFI binding)
+  println("\n=== Phase 29: External Clause ===");
+  var ext_pass: int32 = 0;
+  var ext_tick: uint64 = 0;
+  var ext_pid: int32 = 0;
+
+  // Case 1: string literal lib + name alias
+  if myabs(-42) = 42 then
+    ext_pass := ext_pass + 1;
+  end;
+
+  // Case 2: const ident lib + name alias
+  if mytoupper(97) = 65 then
+    ext_pass := ext_pass + 1;
+  end;
+
+  // Case 3: no lib, just name alias
+  if myabs2(-99) = 99 then
+    ext_pass := ext_pass + 1;
+  end;
+
+  // Case 4: platform-specific
+  @ifdef TARGET_WIN64
+    ext_tick := GetTick();
+    if ext_tick > 0 then
+      ext_pass := ext_pass + 1;
+    end;
+    ext_tick := GetTick2();
+    if ext_tick > 0 then
+      ext_pass := ext_pass + 1;
+    end;
+    println("external clause: {} / 5 passed", ext_pass);
+    asserteq(ext_pass, 5, "external clause");
+  @endif
+
+  @ifdef TARGET_LINUX64
+    ext_pid := ext_getpid();
+    if ext_pid > 0 then
+      ext_pass := ext_pass + 1;
+    end;
+    println("external clause: {} / 4 passed", ext_pass);
+    asserteq(ext_pass, 4, "external clause");
+  @endif
 
   println("all compliance tests passed");
 end.

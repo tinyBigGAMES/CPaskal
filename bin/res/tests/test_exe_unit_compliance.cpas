@@ -23,8 +23,8 @@ import bnf_unit_compliance;
 
 begin
   println("=== Test Unit Compliance ===");
-
-  // --- Public Constants ---
+  
+    // --- Public Constants ---
   println("\n--- Constants ---");
   println("UNIT_VERSION = {}", bnf_unit_compliance.UNIT_VERSION);
   println("UNIT_MAX_VAL = {}", bnf_unit_compliance.UNIT_MAX_VAL);

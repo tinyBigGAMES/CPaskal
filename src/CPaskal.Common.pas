@@ -215,6 +215,18 @@ type
     procedure Clear();
   end;
 
+  { TCPTargetPlatform }
+  TCPTargetPlatform = (
+    tpX86_64_Windows,
+    tpX86_64_Linux
+  );
+
+{ cpTargetTriple }
+function cpTargetTriple(const ATarget: TCPTargetPlatform): string;
+
+{ cpTryParseTarget }
+function cpTryParseTarget(const AValue: string; out ATarget: TCPTargetPlatform): Boolean;
+
 { cpSanitizeIdentifier }
 function cpSanitizeIdentifier(const AName: string): string;
 
@@ -248,6 +260,30 @@ begin
     else
       Result := Result + '_';
   end;
+end;
+
+{ cpTargetTriple }
+function cpTargetTriple(const ATarget: TCPTargetPlatform): string;
+begin
+  case ATarget of
+    tpX86_64_Windows: Result := 'x86_64-windows-gnu';
+    tpX86_64_Linux: Result := 'x86_64-linux-gnu';
+  end;
+end;
+
+{ cpTryParseTarget }
+function cpTryParseTarget(const AValue: string; out ATarget: TCPTargetPlatform): Boolean;
+var
+  LLower: string;
+begin
+  Result := True;
+  LLower := AValue.ToLower();
+  if LLower = 'x86_64_windows' then
+    ATarget := tpX86_64_Windows
+  else if LLower = 'x86_64_linux' then
+    ATarget := tpX86_64_Linux
+  else
+    Result := False;
 end;
 
 end.
