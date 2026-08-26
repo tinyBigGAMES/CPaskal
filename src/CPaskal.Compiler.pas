@@ -49,6 +49,28 @@ const
 
 type
 
+  TCPCompiler = class;
+
+  { TPreParseCallback }
+  TPreParseCallback = reference to procedure(const ACompiler: TCPCompiler;
+    const AUserData: Pointer);
+
+  { TPreParseCallbackEntry }
+  TPreParseCallbackEntry = TCallback<TPreParseCallback>;
+
+  { TPreParseCallbackList }
+  TPreParseCallbackList = TList<TPreParseCallbackEntry>;
+
+  { TPreBuildCallback }
+  TPreBuildCallback = reference to procedure(const ACompiler: TCPCompiler;
+    const AUserData: Pointer);
+
+  { TPreBuildCallbackEntry }
+  TPreBuildCallbackEntry = TCallback<TPreBuildCallback>;
+
+  { TPreBuildCallbackList }
+  TPreBuildCallbackList = TList<TPreBuildCallbackEntry>;
+
   { TCPCompiler }
   TCPCompiler = class(TBaseObject)
   protected
@@ -57,6 +79,15 @@ type
     FCodegen: TCPCodegen;
     FZigBuild: TCPZigBuild;
     FMasterAST: TCPMasterAST;
+    FPreParseCallbacks: TPreParseCallbackList;
+    FPreBuildCallbacks: TPreBuildCallbackList;
+    FKeyValues: TDictionary<string, string>;
+    procedure DoProcessDirectives();
+    procedure DoFirePreParseCallbacks();
+    procedure DoFirePreBuildCallbacks();
+    procedure DoSetupPlatformDefines();
+    procedure DoCLIDirectives();
+    function DoValidateUnitModule(): Boolean;
   public
     constructor Create(); override;
     destructor Destroy(); override;
@@ -124,6 +155,21 @@ type
     procedure AddBreakpoint(const AFileName: string; const ALineNumber: Integer);
     procedure ClearBreakpoints();
 
+    // Pre-parse callbacks (fired before parsing begins)
+    procedure AddPreParseCallback(const ACallback: TPreParseCallback;
+      const AUserData: Pointer = nil);
+    procedure ClearPreParseCallbacks();
+
+    // Pre-build callbacks (fired after directives, before ZigBuild)
+    procedure AddPreBuildCallback(const ACallback: TPreBuildCallback;
+      const AUserData: Pointer = nil);
+    procedure ClearPreBuildCallbacks();
+
+    // Key-value store (generic property bag for cross-phase data)
+    procedure SetKeyValue(const AKey: string; const AValue: string);
+    function GetKeyValue(const AKey: string; const ADefault: string = ''): string;
+    procedure ClearKeyValue(const AKey: string);
+
     // Getters
     function GetLastExitCode(): DWORD;
     function GetOutputPath(): string;
@@ -161,12 +207,18 @@ begin
   FZigBuild := TCPZigBuild.Create();
   FZigBuild.SetErrors(FErrors);
 
+  FPreParseCallbacks := TPreParseCallbackList.Create();
+  FPreBuildCallbacks := TPreBuildCallbackList.Create();
+  FKeyValues := TDictionary<string, string>.Create();
   FMasterAST := nil;
 end;
 
 destructor TCPCompiler.Destroy();
 begin
   FMasterAST.Free();
+  FKeyValues.Free();
+  FPreBuildCallbacks.Free();
+  FPreParseCallbacks.Free();
   FZigBuild.Free();
   FCodegen.Free();
   FSemantics.Free();
@@ -184,6 +236,240 @@ begin
   FSemantics.SetStatusCallback(ACallback, AUserData);
   FCodegen.SetStatusCallback(ACallback, AUserData);
   FZigBuild.SetStatusCallback(ACallback, AUserData);
+end;
+
+{ TCPCompiler }
+
+{ TCPCompiler.DoSetupPlatformDefines }
+procedure TCPCompiler.DoSetupPlatformDefines();
+var
+  LTarget: string;
+  LOptLevel: string;
+begin
+  // Platform defines based on target -- key-value store overrides FZigBuild default
+  FParser.Undefine('WINDOWS');
+  FParser.Undefine('MSWINDOWS');
+  FParser.Undefine('WIN64');
+  FParser.Undefine('TARGET_WIN64');
+  FParser.Undefine('LINUX');
+  FParser.Undefine('TARGET_LINUX64');
+
+  LTarget := GetKeyValue('target');
+  if LTarget = '' then
+    LTarget := FZigBuild.GetTarget();
+  LTarget := LTarget.ToLower();
+
+  if LTarget.Contains('linux') then
+  begin
+    FParser.SetDefine('LINUX', '1');
+    FParser.SetDefine('TARGET_LINUX64', '1');
+  end
+  else
+  begin
+    FParser.SetDefine('WINDOWS', '1');
+    FParser.SetDefine('MSWINDOWS', '1');
+    FParser.SetDefine('WIN64', '1');
+    FParser.SetDefine('TARGET_WIN64', '1');
+  end;
+
+  // Optimization level -- key-value store overrides FZigBuild default
+  FParser.Undefine('DEBUG');
+  FParser.Undefine('RELEASE');
+
+  LOptLevel := GetKeyValue('optimize');
+  if LOptLevel <> '' then
+  begin
+    if LOptLevel = 'debug' then
+      FParser.SetDefine('DEBUG', '1')
+    else
+      FParser.SetDefine('RELEASE', '1');
+  end
+  else
+  begin
+    if FZigBuild.GetOptimizeLevel() = olDebug then
+      FParser.SetDefine('DEBUG', '1')
+    else
+      FParser.SetDefine('RELEASE', '1');
+  end;
+end;
+
+{ TCPCompiler.DoProcessDirectives }
+procedure TCPCompiler.DoProcessDirectives();
+var
+  LMainModule: TCPModuleNode;
+  LDir: TCPDirectiveNode;
+  LName: string;
+  LValue: string;
+  I: Integer;
+begin
+  if (FMasterAST = nil) or (FMasterAST.Modules.Count = 0) then
+    Exit;
+
+  // Only the main module (index 0) provides build configuration
+  LMainModule := FMasterAST.Modules[0];
+
+  for I := 0 to LMainModule.Directives.Count - 1 do
+  begin
+    LDir := LMainModule.Directives[I];
+    LName := LDir.DirectiveName.ToLower();
+    LValue := LDir.DirectiveValue.ToLower();
+
+    if LName = 'target' then
+    begin
+      if (LValue = 'win64') or (LValue = 'x86_64_windows') then
+        SetTarget('x86_64-windows-gnu')
+      else if (LValue = 'linux64') or (LValue = 'x86_64_linux') then
+        SetTarget('x86_64-linux-gnu')
+      else if LValue.Contains('-') then
+        // Raw zig triple passthrough (e.g. x86_64-linux-gnu)
+        SetTarget(LDir.DirectiveValue)
+      else
+        FErrors.Add(LDir.Location, esWarning, CP_ERR_CMP_001,
+          'Unknown @target value ''%s''; expected win64, linux64, or a zig target triple',
+          [LDir.DirectiveValue]);
+    end
+    else if LName = 'subsystem' then
+    begin
+      if LValue = 'console' then
+        SetSubsystem(stConsole)
+      else if LValue = 'gui' then
+        SetSubsystem(stGUI)
+      else
+        FErrors.Add(LDir.Location, esWarning, CP_ERR_CMP_001,
+          'Unknown @subsystem value ''%s''; expected console or gui',
+          [LDir.DirectiveValue]);
+    end
+    else if LName = 'optimize' then
+    begin
+      if LValue = 'debug' then
+        SetOptimizeLevel(olDebug)
+      else if LValue = 'release-safe' then
+        SetOptimizeLevel(olReleaseSafe)
+      else if LValue = 'release-fast' then
+        SetOptimizeLevel(olReleaseFast)
+      else if LValue = 'release-small' then
+        SetOptimizeLevel(olReleaseSmall)
+      else
+        FErrors.Add(LDir.Location, esWarning, CP_ERR_CMP_001,
+          'Unknown @optimize value ''%s''; expected debug, release-safe, release-fast, or release-small',
+          [LDir.DirectiveValue]);
+    end;
+    // @modulepath handled during import resolution (not here)
+  end;
+end;
+
+{ TCPCompiler.DoFirePreParseCallbacks }
+procedure TCPCompiler.DoFirePreParseCallbacks();
+var
+  I: Integer;
+begin
+  for I := 0 to FPreParseCallbacks.Count - 1 do
+    FPreParseCallbacks[I].Callback(Self, FPreParseCallbacks[I].UserData);
+end;
+
+{ TCPCompiler.AddPreParseCallback }
+procedure TCPCompiler.AddPreParseCallback(const ACallback: TPreParseCallback;
+  const AUserData: Pointer);
+var
+  LEntry: TPreParseCallbackEntry;
+begin
+  LEntry.Callback := ACallback;
+  LEntry.UserData := AUserData;
+  FPreParseCallbacks.Add(LEntry);
+end;
+
+{ TCPCompiler.ClearPreParseCallbacks }
+procedure TCPCompiler.ClearPreParseCallbacks();
+begin
+  FPreParseCallbacks.Clear();
+end;
+
+{ TCPCompiler.SetKeyValue }
+procedure TCPCompiler.SetKeyValue(const AKey: string; const AValue: string);
+begin
+  FKeyValues.AddOrSetValue(AKey, AValue);
+end;
+
+{ TCPCompiler.GetKeyValue }
+function TCPCompiler.GetKeyValue(const AKey: string; const ADefault: string): string;
+begin
+  if not FKeyValues.TryGetValue(AKey, Result) then
+    Result := ADefault;
+end;
+
+{ TCPCompiler.ClearKeyValue }
+procedure TCPCompiler.ClearKeyValue(const AKey: string);
+begin
+  FKeyValues.Remove(AKey);
+end;
+
+{ TCPCompiler.DoCLIDirectives }
+procedure TCPCompiler.DoCLIDirectives();
+var
+  LValue: string;
+begin
+  // Apply CLI overrides from key-value store -- these override source directives
+  LValue := GetKeyValue('target');
+  if LValue <> '' then
+    SetTarget(LValue);
+
+  LValue := GetKeyValue('optimize');
+  if LValue <> '' then
+  begin
+    if LValue = 'debug' then
+      SetOptimizeLevel(olDebug)
+    else if LValue = 'release-safe' then
+      SetOptimizeLevel(olReleaseSafe)
+    else if LValue = 'release-fast' then
+      SetOptimizeLevel(olReleaseFast)
+    else if LValue = 'release-small' then
+      SetOptimizeLevel(olReleaseSmall);
+  end;
+
+  LValue := GetKeyValue('subsystem');
+  if LValue <> '' then
+  begin
+    if SameText(LValue, 'gui') then
+      SetSubsystem(stGUI)
+    else
+      SetSubsystem(stConsole);
+  end;
+end;
+
+{ TCPCompiler.DoFirePreBuildCallbacks }
+procedure TCPCompiler.DoFirePreBuildCallbacks();
+var
+  I: Integer;
+begin
+  for I := 0 to FPreBuildCallbacks.Count - 1 do
+    FPreBuildCallbacks[I].Callback(Self, FPreBuildCallbacks[I].UserData);
+end;
+
+procedure TCPCompiler.AddPreBuildCallback(const ACallback: TPreBuildCallback;
+  const AUserData: Pointer);
+var
+  LEntry: TPreBuildCallbackEntry;
+begin
+  LEntry.Callback := ACallback;
+  LEntry.UserData := AUserData;
+  FPreBuildCallbacks.Add(LEntry);
+end;
+
+procedure TCPCompiler.ClearPreBuildCallbacks();
+begin
+  FPreBuildCallbacks.Clear();
+end;
+
+{ TCPCompiler.DoValidateUnitModule }
+function TCPCompiler.DoValidateUnitModule(): Boolean;
+begin
+  Result := FMasterAST.Modules[0].ModuleKind = mkUnit;
+  if not Result then
+    Exit;
+
+  Status('Unit ''%s'' validated successfully.',
+    [FMasterAST.Modules[0].ModuleName]);
+  Status('Warning: Unit modules produce no output. Import this unit from an exe, dll, or lib module.');
 end;
 
 procedure TCPCompiler.Compile(const ASourceFile: string;
@@ -216,6 +502,12 @@ begin
   LSourceDir := TPath.GetDirectoryName(TPath.GetFullPath(LSourceFile));
 
   // Phase 1: Parse -- queue-based import processing
+  // Fire pre-parse callbacks (CLI stores key-values here)
+  DoFirePreParseCallbacks();
+
+  // Set up platform defines before parsing begins
+  DoSetupPlatformDefines();
+
   // Parse the main module, then process any imports it declares
   Status('Parsing %s...', [TPath.GetFileName(LSourceFile)]);
   LModule := FParser.ParseModule(LSourceFile, FMasterAST);
@@ -264,6 +556,17 @@ begin
       Exit;
   end;
 
+  // Process directives from main module only (build config)
+  Status('Processing directives...');
+  DoProcessDirectives();
+
+  // Apply CLI directive overrides from key-value store
+  DoCLIDirectives();
+
+  // Fire pre-build callbacks (user hooks)
+  Status('Processing pre-build callbacks...');
+  DoFirePreBuildCallbacks();
+
   // Phase 2: Semantic analysis
   Status('Analyzing...');
   FErrors.RaiseOnError := True;
@@ -274,6 +577,10 @@ begin
   end;
   FErrors.RaiseOnError := False;
   if FErrors.HasErrors() then
+    Exit;
+
+  // Unit modules: validate only, no codegen or build
+  if DoValidateUnitModule() then
     Exit;
 
   // Phase 3: Code generation

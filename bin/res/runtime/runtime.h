@@ -17,6 +17,45 @@
 #include <cstdio>
 #include <algorithm>
 #include <type_traits>
+#include <format>
+
+/*******************************************************************************
+ * std::formatter<char16_t> - char16_t has no default formatter in C++23.
+ * This specialization converts the code point to its UTF-8 representation
+ * so char16_t values print as characters (e.g. Ω) rather than failing.
+ ******************************************************************************/
+
+template<>
+struct std::formatter<char16_t> : std::formatter<std::string> {
+    auto format(char16_t c, auto& ctx) const {
+        std::string utf8;
+        if (c < 0x80) {
+            utf8 += static_cast<char>(c);
+        } else if (c < 0x800) {
+            utf8 += static_cast<char>(0xC0 | (c >> 6));
+            utf8 += static_cast<char>(0x80 | (c & 0x3F));
+        } else {
+            utf8 += static_cast<char>(0xE0 | (c >> 12));
+            utf8 += static_cast<char>(0x80 | ((c >> 6) & 0x3F));
+            utf8 += static_cast<char>(0x80 | (c & 0x3F));
+        }
+        return std::formatter<std::string>::format(utf8, ctx);
+    }
+};
+
+/*******************************************************************************
+ * std::formatter<enum> - C++23 has no default formatter for enum types.
+ * This specialization formats any enum as its underlying integer value.
+ ******************************************************************************/
+
+template<typename T>
+    requires std::is_enum_v<T>
+struct std::formatter<T> : std::formatter<std::underlying_type_t<T>> {
+    auto format(T value, auto& ctx) const {
+        return std::formatter<std::underlying_type_t<T>>::format(
+            static_cast<std::underlying_type_t<T>>(value), ctx);
+    }
+};
 
 /*******************************************************************************
  * Exception Codes (Platform-Independent)

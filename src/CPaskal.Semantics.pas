@@ -245,6 +245,7 @@ begin
       // Create overload group with both routines
       LGroup := TCPOverloadGroupNode.Create();
       LGroup.DeclName := AName;
+      LGroup.IsPublic := LExistingRoutine.IsPublic or LNewRoutine.IsPublic;
       LGroup.Overloads.Add(LExistingRoutine);
       LGroup.Overloads.Add(LNewRoutine);
       FOwnedGroups.Add(LGroup);
@@ -267,6 +268,8 @@ begin
       end;
 
       LGroup.Overloads.Add(LNewRoutine);
+      if LNewRoutine.IsPublic then
+        LGroup.IsPublic := True;
       Exit;
     end
 
@@ -440,6 +443,9 @@ begin
   // Analyze test blocks
   for I := 0 to AModule.TestBlocks.Count - 1 do
   begin
+    // Enrich with sanitized C++ function name
+    AModule.TestBlocks[I].CppTestName := cpSanitizeIdentifier(AModule.TestBlocks[I].TestName);
+
     PushScope(skTest);
     try
       // Register test block local vars
@@ -1628,15 +1634,42 @@ var
   I: Integer;
   LDecl: TCPASTNode;
 begin
-  // Resolve the type by name
+  // Resolve the type by name -- module-qualified or local
   if ANode.TypeName <> '' then
   begin
-    LDecl := FCurrentScope.Lookup(ANode.TypeName);
-    if LDecl <> nil then
-      ANode.ResolvedType := LDecl
+    if ANode.ModuleName <> '' then
+    begin
+      // Module-qualified: look up in the module's scope
+      if FModuleScopes.ContainsKey(ANode.ModuleName) then
+      begin
+        LDecl := FModuleScopes[ANode.ModuleName].LookupLocal(ANode.TypeName);
+        if LDecl <> nil then
+        begin
+          if (LDecl is TCPTypeDeclNode) and TCPTypeDeclNode(LDecl).IsPublic then
+            ANode.ResolvedType := LDecl
+          else if (LDecl is TCPTypeDeclNode) and not TCPTypeDeclNode(LDecl).IsPublic then
+            FErrors.Add(ANode.Location, esError, CP_ERR_SEM_001,
+              'Type ''%s'' in module ''%s'' is not public', [ANode.TypeName, ANode.ModuleName])
+          else
+            ANode.ResolvedType := LDecl;
+        end
+        else
+          FErrors.Add(ANode.Location, esError, CP_ERR_SEM_001,
+            'Undeclared type: %s.%s', [ANode.ModuleName, ANode.TypeName]);
+      end
+      else
+        FErrors.Add(ANode.Location, esError, CP_ERR_SEM_001,
+          'Unknown module: %s', [ANode.ModuleName]);
+    end
     else
-      FErrors.Add(ANode.Location, esError, CP_ERR_SEM_001,
-        'Undeclared type: %s', [ANode.TypeName]);
+    begin
+      LDecl := FCurrentScope.Lookup(ANode.TypeName);
+      if LDecl <> nil then
+        ANode.ResolvedType := LDecl
+      else
+        FErrors.Add(ANode.Location, esError, CP_ERR_SEM_001,
+          'Undeclared type: %s', [ANode.TypeName]);
+    end;
   end;
 
   for I := 0 to ANode.FieldInits.Count - 1 do

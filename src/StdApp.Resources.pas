@@ -156,6 +156,105 @@ resourcestring
   //--------------------------------------------------------------------------
 
   //--------------------------------------------------------------------------
+  // Backend Messages
+  //--------------------------------------------------------------------------
+  RSBackendOutputPath   = 'Output path not specified';
+  RSBackendBuildFailed  = 'Build failed - no output generated';
+  RSBackendWriteFailed  = 'Error writing output: %s';
+  RSBackendNoActiveFunc = 'No active function';
+
+  //--------------------------------------------------------------------------
+  // Linker Messages
+  //--------------------------------------------------------------------------
+  RSLinkerCOFFTooSmall = 'COFF file too small: ''%s''';
+  RSLinkerNotAMD64     = 'Not an AMD64 COFF object: ''%s'' (machine=$%.4x)';
+  RSLinkerARTooSmall   = 'AR file too small: ''%s''';
+  RSLinkerARBadSig     = 'Invalid AR signature: ''%s''';
+  RSLinkerObjNotFound  = 'Object file not found: ''%s''';
+  RSLinkerLibNotFound  = 'Library file not found: ''%s''';
+
+  //--------------------------------------------------------------------------
+  // SSA Messages
+  //--------------------------------------------------------------------------
+  RSSSAUnknownFunction = 'Unknown function: ''%s'' (in routine ''%s'')';
+  RSASTChildIndexOutOfRange = 'Child index %d out of range (0..%d)';
+  RSASTReplaceChildNotFound = 'Child node not found for replacement';
+  RSASTNotAChild            = 'Referenced node is not a child of this node';
+
+  //--------------------------------------------------------------------------
+  // IR Messages
+  //--------------------------------------------------------------------------
+  RSIRNoActiveFunction      = 'No active function';
+  RSIRUnknownType           = 'Unknown type: ''%s''';
+  RSIRUnknownBaseType       = 'Unknown base type: ''%s''';
+  RSIROverloadCLinkage      = 'Overloaded routine ''%s'' cannot use C linkage';
+  RSIRVariadicOverload      = 'Variadic routine ''%s'' cannot be overloaded';
+  RSIRSyscallTooManyArgs    = 'Syscall has %d arguments; maximum is %d';
+  RSIRBitFieldNoRecord      = 'Bit field declared outside record';
+  RSIRBitFieldWidth         = 'Bit field width exceeds type size (%d)';
+  RSIRAlreadyBuildingRecord = 'Already building a record type';
+  RSIRAlreadyBuildingUnion  = 'Already building a union type';
+  RSIRAlreadyBuildingEnum   = 'Already building an enum type';
+  RSIRAlreadyAnonRecord     = 'Already building an anonymous record';
+  RSIRAlreadyAnonUnion      = 'Already building an anonymous union';
+  RSIRNotBuildingRecord     = 'Not building a record type';
+  RSIRNotBuildingUnion      = 'Not building a union type';
+  RSIRNotBuildingEnum       = 'Not building an enum type';
+  RSIRNotBuildingRecordUnion = 'Not building a record or union';
+  RSIRNotBuildingRoutine    = 'Not building a routine type';
+  RSIRBaseNotRecord         = 'Base type is not a record';
+  RSIRBeginRecordNeedsUnion = 'BeginRecord requires active union context';
+  RSIRBeginUnionNeedsRecord = 'BeginUnion requires active record context';
+  RSIREnumNoValues          = 'Enum type has no values';
+  RSIREnumRangeTooLarge     = 'Enum range too large';
+  RSIRUnknownEnumType       = 'Unknown enum type: ''%s''';
+  RSIRTypeNotEnum           = 'Type is not an enum: ''%s''';
+  RSIRTypeNotSet            = 'Type is not a set: ''%s''';
+  RSIRUnknownSetType        = 'Unknown set type: ''%s''';
+  RSIRInvalidSetRange       = 'Invalid set range';
+  RSIRSetRangeTooLarge      = 'Set range too large';
+  RSIRSizeOfUnknown         = 'SizeOf: unknown type: ''%s''';
+  RSIRAlignOfUnknown        = 'AlignOf: unknown type: ''%s''';
+  RSIRLenNotApplicable      = 'Len not applicable to type: ''%s''';
+  RSIRLenUnknown            = 'Len: unknown type: ''%s''';
+  RSIRLowNotApplicable      = 'Low not applicable to type: ''%s''';
+  RSIRLowUnknown            = 'Low: unknown type: ''%s''';
+  RSIRHighNotApplicable     = 'High not applicable to type: ''%s''';
+  RSIRHighUnknown           = 'High: unknown type: ''%s''';
+
+  //--------------------------------------------------------------------------
+  // Codegen Messages
+  //--------------------------------------------------------------------------
+  RSCodegenNoCode    = 'No code generated';
+  RSCodegenRunFailed = 'Run failed: %s';
+  RSCodegenCOFFFailed = 'COFF generation failed, cannot create .lib';
+  RSCodegenLinuxKind = 'linux64 supports exe, dll, obj, and lib output';
+
+  //--------------------------------------------------------------------------
+  // SourceMap / Debug Messages
+  //--------------------------------------------------------------------------
+  RSSourceMapHeaderShort   = 'Invalid .mdbg file: header too short';
+  RSSourceMapBadMagic      = 'Invalid .mdbg file: bad magic';
+  RSSourceMapBadVersion    = 'Unsupported .mdbg version: %d';
+  RSSourceMapStrTableTrunc = 'Invalid .mdbg file: string table truncated';
+  RSSourceMapSrcFileTrunc  = 'Invalid .mdbg file: source file entry %d truncated';
+  RSSourceMapFuncCountMiss = 'Invalid .mdbg file: function count missing';
+  RSSourceMapFuncTrunc     = 'Invalid .mdbg file: function entry %d truncated';
+  RSSourceMapOverlap       = 'Invalid .mdbg file: section overlap';
+  RSSourceMapLineTrunc     = 'Invalid .mdbg file: line entry %d truncated';
+  RSSourceMapVarTrunc      = 'Invalid .mdbg file: variable entry %d truncated';
+
+  //--------------------------------------------------------------------------
+  // Native/Build Warning Messages
+  //--------------------------------------------------------------------------
+  RSWarnIconNotFound      = 'Icon file not found: ''%s''';
+  RSWarnIconFailed        = 'Failed to load icon: ''%s''';
+  RSWarnManifestFailed    = 'Failed to embed manifest';
+  RSWarnVersionInfoFailed = 'Failed to embed version info: ''%s''';
+
+  //==========================================================================
+
+  //--------------------------------------------------------------------------
   // LVM Messages
   //--------------------------------------------------------------------------
   RSLVMBuiltinArgs       = '%s() requires %s';

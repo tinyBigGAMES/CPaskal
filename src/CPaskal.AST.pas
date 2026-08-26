@@ -282,12 +282,14 @@ type
   TCPTestBlockNode = class(TCPASTNode)
   protected
     FTestName: string;
+    FCppTestName: string;
     FLocals: TObjectList<TCPVarDeclNode>;
     FBody: TObjectList<TCPASTNode>;
   public
     constructor Create(); override;
     destructor Destroy(); override;
     property TestName: string read FTestName write FTestName;
+    property CppTestName: string read FCppTestName write FCppTestName;
     property Locals: TObjectList<TCPVarDeclNode> read FLocals;
     property Body: TObjectList<TCPASTNode> read FBody;
   end;
@@ -994,11 +996,13 @@ type
   TCPRecordLiteralNode = class(TCPExprNode)
   protected
     FTypeName: string;
+    FModuleName: string;
     FFieldInits: TObjectList<TCPFieldInitNode>;
   public
     constructor Create(); override;
     destructor Destroy(); override;
     property TypeName: string read FTypeName write FTypeName;
+    property ModuleName: string read FModuleName write FModuleName;
     property FieldInits: TObjectList<TCPFieldInitNode> read FFieldInits;
   end;
 

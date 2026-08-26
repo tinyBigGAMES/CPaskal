@@ -1063,9 +1063,9 @@ var
   LRawStartLine: UInt64;
   LRawStartCol: UInt64;
   LEndWord: string;
-  LEndLen: Integer;
+  LEndLen: UInt64;
   LFoundEnd: Boolean;
-  LI: Integer;
+  LI: UInt64;
   LAfterEnd: Char;
   LEndKwLine: UInt64;
   LEndKwCol: UInt64;
@@ -1182,6 +1182,8 @@ begin
 
   Result.LeadingTrivia := ATrivia;
 end;
+
+// -- Tokenization -----------------------------------------------------------
 
 function TCPLexer.TokenizeFile(const AFilename: string): Boolean;
 var

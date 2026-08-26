@@ -215,6 +215,9 @@ type
     procedure Clear();
   end;
 
+{ cpSanitizeIdentifier }
+function cpSanitizeIdentifier(const AName: string): string;
+
 implementation
 
 { TCPToken }
@@ -228,6 +231,23 @@ begin
   Location.Clear();
   Category := tcSpecial;
   LiteralValue := TValue.Empty;
+end;
+
+{ cpSanitizeIdentifier }
+function cpSanitizeIdentifier(const AName: string): string;
+var
+  I: Integer;
+  LChar: Char;
+begin
+  Result := '';
+  for I := 1 to Length(AName) do
+  begin
+    LChar := AName[I];
+    if CharInSet(LChar, ['A'..'Z', 'a'..'z', '0'..'9', '_']) then
+      Result := Result + LChar
+    else
+      Result := Result + '_';
+  end;
 end;
 
 end.

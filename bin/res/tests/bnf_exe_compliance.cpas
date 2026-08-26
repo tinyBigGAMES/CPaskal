@@ -121,51 +121,51 @@ end;
 
 // Phase 6: Type Section -- Choices (Enums)
 type
-  TColor = choices(red, green, blue = 5, alpha);
-  TDir = choices(north, east, south, west);
+  Color = choices(red, green, blue = 5, alpha);
+  Dir = choices(north, east, south, west);
 
   // Phase 16: Records (struct types)
-  TPoint = record
+  Point = record
     x: int32;
     y: int32;
   end;
 
   // Phase 16b: Extended records
-  TPackedPair = record packed
+  PackedPair = record packed
     a: int8;
     b: int32;
   end;
 
-  TAligned32 = record align(32)
+  Aligned32 = record align(32)
     val: int32;
   end;
 
-  TBase = record
+  Base = record
     bx: int32;
     by: int32;
   end;
 
-  TDerived = record(TBase)
+  Derived = record(Base)
     dz: int32;
   end;
 
-  TInner = record
+  Inner = record
     iv: int32;
   end;
 
-  TOuter = record
-    inner: TInner;
+  Outer = record
+    inner: Inner;
     ov: int32;
   end;
 
   // Standalone overlay (union)
-  TValue = overlay
+  Value = overlay
     asInt: int64;
     asFloat: float64;
   end;
 
   // Anon overlay inside record
-  TTagged = record
+  Tagged = record
     tag: int32;
     overlay
       iVal: int64;
@@ -174,33 +174,33 @@ type
   end;
 
   // Bit fields
-  TBitPack = record
+  BitPack = record
     a: uint32 : 4;
     b: uint32 : 4;
     c: uint32 : 8;
   end;
 
   // Phase 17: Routine types (function pointers)
-  TBinOp = routine(x: int32; y: int32): int32;
+  BinOp = routine(x: int32; y: int32): int32;
 
-  TMathOps = record
-    addFn: TBinOp;
-    mulFn: TBinOp;
+  MathOps = record
+    addFn: BinOp;
+    mulFn: BinOp;
   end;
 
   // Phase 26: Record literal types
-  TPerson = record
+  Person = record
     name: string;
     age: int32;
   end;
 
-  TLine = record
-    start: TPoint;
-    finish: TPoint;
+  Line = record
+    start: Point;
+    finish: Point;
   end;
 
-var fp_op: TBinOp;
-var math_ops: TMathOps;
+var fp_op: BinOp;
+var math_ops: MathOps;
 var mbuf: pointer to uint8;
 var arr5: array[0..4] of int32;
 var darr: array of int32;
@@ -237,7 +237,7 @@ finalize
 end;
 
 begin
-  println("Myrissa BNF Compliance");
+  println("CPaskal BNF Compliance");
 
   // Phase 23b: Actually use imported symbols (full module qualification)
   println("\n=== Phase 23b: Import Usage ===");
@@ -644,14 +644,14 @@ begin
 
   // Phase 6: Choices (Enums)
   println("\n=== Phase 6: Choices ===");
-  println("{}", TColor.red);
-  println("{}", TColor.green);
-  println("{}", TColor.blue);
-  println("{}", TColor.alpha);
-  var tc: TColor = TColor.blue;
+  println("{}", Color.red);
+  println("{}", Color.green);
+  println("{}", Color.blue);
+  println("{}", Color.alpha);
+  var tc: Color = Color.blue;
   println("var = {}", tc);
-  println("{}", TDir.north);
-  println("{}", TDir.west);
+  println("{}", Dir.north);
+  println("{}", Dir.west);
 
   // Phase 7: Pointers
   println("\n=== Phase 7: Pointers ===");
@@ -666,7 +666,7 @@ begin
 
   // Phase 16: Records
   println("\n=== Phase 16: Records ===");
-  var pt: TPoint;
+  var pt: Point;
   pt.x := 10;
   pt.y := 20;
   println("x = {}", pt.x);
@@ -677,43 +677,43 @@ begin
   println("\n=== Phase 16b: Extended Records ===");
 
   // Packed records
-  var pp16: TPackedPair;
+  var pp16: PackedPair;
   pp16.a := 1;
   pp16.b := 1000;
   println("packed a={} b={}", pp16.a, pp16.b);
 
   // Aligned records
-  var al: TAligned32;
+  var al: Aligned32;
   al.val := 77;
   println("aligned val={}", al.val);
 
   // Base/inherited records
-  var dr: TDerived;
+  var dr: Derived;
   dr.bx := 10;
   dr.by := 20;
   dr.dz := 30;
   println("derived {} {} {}", dr.bx, dr.by, dr.dz);
 
   // Nested record fields
-  var ot: TOuter;
+  var ot: Outer;
   ot.inner.iv := 42;
   ot.ov := 99;
   println("nested {} {}", ot.inner.iv, ot.ov);
 
   // Overlays
-  var vl: TValue;
+  var vl: Value;
   vl.asInt := 42;
   println("overlay int={}", vl.asInt);
   vl.asFloat := 2.718;
   println("overlay float={}", vl.asFloat);
 
-  var tg: TTagged;
+  var tg: Tagged;
   tg.tag := 1;
   tg.iVal := 9999;
   println("tagged {} {}", tg.tag, tg.iVal);
 
   // Bit fields
-  var bp: TBitPack;
+  var bp: BitPack;
   bp.a := 7;
   bp.b := 12;
   bp.c := 255;
@@ -916,24 +916,24 @@ begin
   // Phase 26: Record Literals
   println("\n=== Phase 26: Record Literals ===");
   // Basic int fields
-  var rp: TPoint = TPoint(x: 42, y: 99);
+  var rp: Point = Point(x: 42, y: 99);
   println("record literal x: {}", rp.x);
   println("record literal y: {}", rp.y);
   // Reassignment
-  rp := TPoint(x: 100, y: 200);
+  rp := Point(x: 100, y: 200);
   println("reassign x: {}", rp.x);
   println("reassign y: {}", rp.y);
   // Expression field values
   var ra: int32 = 5;
-  var rq: TPoint = TPoint(x: ra * 2, y: ra + 3);
+  var rq: Point = Point(x: ra * 2, y: ra + 3);
   println("expr field x: {}", rq.x);
   println("expr field y: {}", rq.y);
   // String fields
-  var rpn: TPerson = TPerson(name: "Alice", age: 30);
+  var rpn: Person = Person(name: "Alice", age: 30);
   println("person name: {}", rpn.name);
   println("person age: {}", rpn.age);
   // Nested record literal fields
-  var rln: TLine = TLine(start: TPoint(x: 1, y: 2), finish: TPoint(x: 10, y: 20));
+  var rln: Line = Line(start: Point(x: 1, y: 2), finish: Point(x: 10, y: 20));
   println("line start: {} {}", rln.start.x, rln.start.y);
   println("line finish: {} {}", rln.finish.x, rln.finish.y);
 
@@ -942,6 +942,75 @@ begin
   println("ovl_add(1,2) = {}", ovl_add(1, 2));
   println("ovl_add(1.5,2.5) = {}", ovl_add(1.5, 2.5));
   println("ovl_add(1,2,3) = {}", ovl_add(1, 2, 3));
+
+  // Phase 28: Conditional Compilation
+  println("\n=== Phase 28: Conditional Compilation ===");
+  var cc_result: int32 = 0;
+
+  // @ifdef with predefined symbol
+  @ifdef CPASKAL
+    cc_result := cc_result + 1;
+  @endif
+
+  // @ifndef with undefined symbol
+  @ifndef NONEXISTENT_SYMBOL
+    cc_result := cc_result + 1;
+  @endif
+
+  // @ifdef false branch skipped
+  @ifdef NONEXISTENT_SYMBOL
+    cc_result := cc_result + 100;
+  @endif
+
+  // @ifdef/@else
+  @ifdef NONEXISTENT_SYMBOL
+    cc_result := cc_result + 100;
+  @else
+    cc_result := cc_result + 1;
+  @endif
+
+  // @define/@ifdef
+  @define MY_TEST_SYMBOL
+  @ifdef MY_TEST_SYMBOL
+    cc_result := cc_result + 1;
+  @endif
+
+  // @undef/@ifdef/@else
+  @undef MY_TEST_SYMBOL
+  @ifdef MY_TEST_SYMBOL
+    cc_result := cc_result + 100;
+  @else
+    cc_result := cc_result + 1;
+  @endif
+
+  // @elseif
+  @ifdef NONEXISTENT_SYMBOL
+    cc_result := cc_result + 100;
+  @elseif CPASKAL
+    cc_result := cc_result + 1;
+  @else
+    cc_result := cc_result + 100;
+  @endif
+
+  // Nested @ifdef
+  @ifdef CPASKAL
+    @ifdef CPUX64
+      cc_result := cc_result + 1;
+    @endif
+  @endif
+
+  // Platform defines
+  @ifdef TARGET_LINUX64
+    cc_result := cc_result + 1;
+  @endif
+
+  // Module kind defines
+  @ifdef BUILD_EXE
+    cc_result := cc_result + 1;
+  @endif
+
+  println("conditional compilation: {} / 9 passed", cc_result);
+  asserteq(cc_result, 9, "conditional compilation");
 
   println("all compliance tests passed");
 end.

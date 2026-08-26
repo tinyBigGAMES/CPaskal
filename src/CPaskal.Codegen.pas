@@ -384,7 +384,7 @@ begin
   begin
     LTest := AModule.TestBlocks[I];
     FOutput.BlankLine(otSource);
-    FOutput.EmitLine('void __test_' + LTest.TestName + '() {', otSource);
+    FOutput.EmitLine('void __test_' + LTest.CppTestName + '() {', otSource);
     FOutput.IndentIn();
 
     // Local variables
@@ -414,7 +414,7 @@ begin
       begin
         LTest := AModule.TestBlocks[I];
         FOutput.EmitLine('rt_test_register("' + LTest.TestName +
-          '", __test_' + LTest.TestName + ', __FILE__, __LINE__);', otSource);
+          '", __test_' + LTest.CppTestName + ', __FILE__, __LINE__);', otSource);
       end;
     end;
 
@@ -714,19 +714,26 @@ var
   I: Integer;
   LField: TCPFieldDeclNode;
   LFieldType: string;
+  LBaseSpec: string;
 begin
   if AIsPublic then
     LTarget := otHeader
   else
     LTarget := otSource;
 
+  // Record inheritance: emit struct TDerived : TBase {
+  if ANode.BaseType <> nil then
+    LBaseSpec := ' : ' + EmitTypeExpr(ANode.BaseType)
+  else
+    LBaseSpec := '';
+
   if ANode.IsPacked then
     FOutput.EmitLine('#pragma pack(push, 1)', LTarget);
 
   if ANode.Alignment > 0 then
-    FOutput.EmitLine('struct alignas(' + IntToStr(ANode.Alignment) + ') ' + AName + ' {', LTarget)
+    FOutput.EmitLine('struct alignas(' + IntToStr(ANode.Alignment) + ') ' + AName + LBaseSpec + ' {', LTarget)
   else
-    FOutput.EmitLine('struct ' + AName + ' {', LTarget);
+    FOutput.EmitLine('struct ' + AName + LBaseSpec + ' {', LTarget);
 
   FOutput.IndentIn();
   for I := 0 to ANode.Fields.Count - 1 do
@@ -1084,6 +1091,7 @@ procedure TCPCodegen.EmitPrint(const ANode: TCPPrintNode);
 var
   LFmtExpr: string;
   LArgs: string;
+  LArgExpr: string;
   I: Integer;
 begin
   // First arg is the format string, remaining args are format arguments
@@ -1105,9 +1113,19 @@ begin
   for I := 1 to ANode.Args.Count - 1 do
   begin
     EmitExpr(TCPExprNode(ANode.Args[I]));
+    LArgExpr := FOutput.ExprResult;
+
+    // Bit-field members cannot bind to forwarding references (std::println
+    // takes Args&&...). Wrap in static_cast to produce a prvalue.
+    if (ANode.Args[I] is TCPDotAccessNode) and
+       (TCPDotAccessNode(ANode.Args[I]).AccessKind = dakField) and
+       (TCPDotAccessNode(ANode.Args[I]).ResolvedDecl is TCPFieldDeclNode) and
+       (TCPFieldDeclNode(TCPDotAccessNode(ANode.Args[I]).ResolvedDecl).BitWidth > 0) then
+      LArgExpr := 'static_cast<' + EmitTypeExpr(TCPExprNode(ANode.Args[I]).ResolvedType) + '>(' + LArgExpr + ')';
+
     if LArgs <> '' then
       LArgs := LArgs + ', ';
-    LArgs := LArgs + FOutput.ExprResult;
+    LArgs := LArgs + LArgExpr;
   end;
 
   if ANode.IsLn then
@@ -1149,6 +1167,13 @@ begin
       LArg0 := FOutput.ExprResult;
       EmitExpr(TCPExprNode(ANode.Args[1]));
       LArg1 := FOutput.ExprResult;
+
+      // Cast expected to match actual's type for C++ template deduction
+      if (TCPExprNode(ANode.Args[0]).ResolvedType <> nil) and
+         (TCPExprNode(ANode.Args[1]).ResolvedType <> nil) and
+         (TCPExprNode(ANode.Args[0]).ResolvedType <> TCPExprNode(ANode.Args[1]).ResolvedType) then
+        LArg0 := 'static_cast<' + EmitTypeExpr(TCPExprNode(ANode.Args[1]).ResolvedType) + '>(' + LArg0 + ')';
+
       FOutput.EmitLine('rt_test_assert_cmp(' + LArg0 + ', ' + LArg1 +
         ', RT_CMP_EQ, nullptr, __FILE__, __LINE__);', otSource);
     end;
@@ -1235,9 +1260,46 @@ begin
 end;
 
 procedure TCPCodegen.EmitGetMem(const ANode: TCPGetMemNode);
+var
+  LPtr: string;
+  LPtrCppType: string;
+  LTargetType: string;
+  LResolved: TCPASTNode;
+  LPointerNode: TCPPointerTypeNode;
 begin
   EmitExpr(TCPExprNode(ANode.ArgExpr));
-  FOutput.EmitLine('rt_getmem(' + FOutput.ExprResult + ');', otSource);
+  LPtr := FOutput.ExprResult;
+
+  // getmem(ptr) -> ptr = static_cast<T*>(rt_getmem(sizeof(T)))
+  // ResolvedType may be TCPTypeDeclNode(TypeDef=PointerTypeNode) or
+  // TCPPointerTypeNode directly, or TCPTypeRefNode -> ResolvedDecl -> TypeDeclNode
+  LPtrCppType := '';
+  LTargetType := '';
+  LPointerNode := nil;
+  LResolved := TCPExprNode(ANode.ArgExpr).ResolvedType;
+
+  // Follow TCPTypeRefNode -> ResolvedDecl
+  if (LResolved <> nil) and (LResolved is TCPTypeRefNode) and
+     (TCPTypeRefNode(LResolved).ResolvedDecl <> nil) then
+    LResolved := TCPTypeRefNode(LResolved).ResolvedDecl;
+
+  // Follow TCPTypeDeclNode -> TypeDef
+  if (LResolved <> nil) and (LResolved is TCPTypeDeclNode) and
+     (TCPTypeDeclNode(LResolved).TypeDef is TCPPointerTypeNode) then
+    LPointerNode := TCPPointerTypeNode(TCPTypeDeclNode(LResolved).TypeDef)
+  else if (LResolved <> nil) and (LResolved is TCPPointerTypeNode) then
+    LPointerNode := TCPPointerTypeNode(LResolved);
+
+  if (LPointerNode <> nil) and (LPointerNode.TargetType <> nil) then
+  begin
+    LTargetType := EmitTypeExpr(LPointerNode.TargetType);
+    LPtrCppType := LTargetType + '*';
+  end;
+
+  if LPtrCppType <> '' then
+    FOutput.EmitLine(LPtr + ' = static_cast<' + LPtrCppType + '>(rt_getmem(sizeof(' + LTargetType + ')));', otSource)
+  else
+    FOutput.EmitLine(LPtr + ' = rt_getmem(1);', otSource);
 end;
 
 procedure TCPCodegen.EmitFreeMem(const ANode: TCPFreeMemNode);
@@ -1250,6 +1312,9 @@ procedure TCPCodegen.EmitResizeMem(const ANode: TCPResizeMemNode);
 var
   LPtr: string;
   LSize: string;
+  LPtrType: string;
+  LResolved: TCPASTNode;
+  LPointerNode: TCPPointerTypeNode;
 begin
   EmitExpr(TCPExprNode(ANode.PtrExpr));
   LPtr := FOutput.ExprResult;
@@ -1257,13 +1322,39 @@ begin
   EmitExpr(TCPExprNode(ANode.SizeExpr));
   LSize := FOutput.ExprResult;
 
-  FOutput.EmitLine(LPtr + ' = rt_resizemem(' + LPtr + ', ' + LSize + ');', otSource);
+  // resizemem(ptr, size) -> ptr = static_cast<T*>(rt_resizemem(ptr, size))
+  LPtrType := '';
+  LPointerNode := nil;
+  LResolved := TCPExprNode(ANode.PtrExpr).ResolvedType;
+
+  // Follow TCPTypeRefNode -> ResolvedDecl
+  if (LResolved <> nil) and (LResolved is TCPTypeRefNode) and
+     (TCPTypeRefNode(LResolved).ResolvedDecl <> nil) then
+    LResolved := TCPTypeRefNode(LResolved).ResolvedDecl;
+
+  // Follow TCPTypeDeclNode -> TypeDef
+  if (LResolved <> nil) and (LResolved is TCPTypeDeclNode) and
+     (TCPTypeDeclNode(LResolved).TypeDef is TCPPointerTypeNode) then
+    LPointerNode := TCPPointerTypeNode(TCPTypeDeclNode(LResolved).TypeDef)
+  else if (LResolved <> nil) and (LResolved is TCPPointerTypeNode) then
+    LPointerNode := TCPPointerTypeNode(LResolved);
+
+  if (LPointerNode <> nil) and (LPointerNode.TargetType <> nil) then
+    LPtrType := EmitTypeExpr(LPointerNode.TargetType) + '*';
+
+  if LPtrType <> '' then
+    FOutput.EmitLine(LPtr + ' = static_cast<' + LPtrType + '>(rt_resizemem(' + LPtr + ', ' + LSize + '));', otSource)
+  else
+    FOutput.EmitLine(LPtr + ' = rt_resizemem(' + LPtr + ', ' + LSize + ');', otSource);
 end;
 
 procedure TCPCodegen.EmitSetLength(const ANode: TCPSetLengthNode);
 var
   LTarget: string;
   LLen: string;
+  LPtrType: string;
+  LResolved: TCPASTNode;
+  LPointerNode: TCPPointerTypeNode;
 begin
   EmitExpr(TCPExprNode(ANode.TargetExpr));
   LTarget := FOutput.ExprResult;
@@ -1271,7 +1362,30 @@ begin
   EmitExpr(TCPExprNode(ANode.LengthExpr));
   LLen := FOutput.ExprResult;
 
-  FOutput.EmitLine(LTarget + '.resize(' + LLen + ');', otSource);
+  // Check if target is a pointer type -- use rt_resizemem instead of .resize()
+  LPtrType := '';
+  LPointerNode := nil;
+  LResolved := TCPExprNode(ANode.TargetExpr).ResolvedType;
+
+  // Follow TCPTypeRefNode -> ResolvedDecl
+  if (LResolved <> nil) and (LResolved is TCPTypeRefNode) and
+     (TCPTypeRefNode(LResolved).ResolvedDecl <> nil) then
+    LResolved := TCPTypeRefNode(LResolved).ResolvedDecl;
+
+  // Follow TCPTypeDeclNode -> TypeDef
+  if (LResolved <> nil) and (LResolved is TCPTypeDeclNode) and
+     (TCPTypeDeclNode(LResolved).TypeDef is TCPPointerTypeNode) then
+    LPointerNode := TCPPointerTypeNode(TCPTypeDeclNode(LResolved).TypeDef)
+  else if (LResolved <> nil) and (LResolved is TCPPointerTypeNode) then
+    LPointerNode := TCPPointerTypeNode(LResolved);
+
+  if (LPointerNode <> nil) and (LPointerNode.TargetType <> nil) then
+    LPtrType := EmitTypeExpr(LPointerNode.TargetType) + '*';
+
+  if LPtrType <> '' then
+    FOutput.EmitLine(LTarget + ' = static_cast<' + LPtrType + '>(rt_resizemem(' + LTarget + ', ' + LLen + '));', otSource)
+  else
+    FOutput.EmitLine(LTarget + '.resize(' + LLen + ');', otSource);
 end;
 
 // Expression dispatch
@@ -1532,7 +1646,7 @@ begin
     ikCStr:
     begin
       EmitExpr(TCPExprNode(ANode.Args[0]));
-      FOutput.ExprResult := FOutput.ExprResult + '.c_str()';
+      FOutput.ExprResult := 'const_cast<char*>(' + FOutput.ExprResult + '.c_str())';
     end;
     ikWStr:
     begin

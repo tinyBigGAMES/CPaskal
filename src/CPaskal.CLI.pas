@@ -321,34 +321,26 @@ end;
 procedure TCPCLI.DoCompile();
 var
   LOutputPath: string;
+  LTarget: string;
+  LSubsystem: string;
+  LOptLevel: string;
 begin
   SetupCallbacks();
 
-  // Configure target
-  if FTarget <> '' then
-    FCompiler.SetTarget(FTarget);
-
-  // Configure subsystem
-  if FSubsystem <> '' then
-  begin
-    if SameText(FSubsystem, 'gui') then
-      FCompiler.SetSubsystem(stGUI)
-    else
-      FCompiler.SetSubsystem(stConsole);
-  end;
-
-  // Configure optimize level
-  if FOptLevel <> '' then
-  begin
-    if SameText(FOptLevel, 'release-safe') then
-      FCompiler.SetOptimizeLevel(olReleaseSafe)
-    else if SameText(FOptLevel, 'release-fast') then
-      FCompiler.SetOptimizeLevel(olReleaseFast)
-    else if SameText(FOptLevel, 'release-small') then
-      FCompiler.SetOptimizeLevel(olReleaseSmall)
-    else
-      FCompiler.SetOptimizeLevel(olDebug);
-  end;
+  // Register pre-parse callback to store CLI directives in key-value store
+  LTarget := FTarget;
+  LSubsystem := FSubsystem;
+  LOptLevel := FOptLevel;
+  FCompiler.AddPreParseCallback(
+    procedure(const ACompiler: TCPCompiler; const AUserData: Pointer)
+    begin
+      if LTarget <> '' then
+        ACompiler.SetKeyValue('target', LTarget);
+      if LSubsystem <> '' then
+        ACompiler.SetKeyValue('subsystem', LSubsystem);
+      if LOptLevel <> '' then
+        ACompiler.SetKeyValue('optimize', LOptLevel);
+    end);
 
   // Determine output path
   if FOutputPath <> '' then

@@ -47,14 +47,32 @@ const
   CP_ERR_PAR_008 = 'PAR008';  // Expected identifier
   CP_ERR_PAR_009 = 'PAR009';  // Invalid directive
   CP_ERR_PAR_010 = 'PAR010';  // Invalid match arm
+  CP_ERR_PAR_020 = 'PAR020';  // Conditional directive missing identifier
+  CP_ERR_PAR_021 = 'PAR021';  // Unmatched @elseif/@else/@endif
+  CP_ERR_PAR_022 = 'PAR022';  // Unterminated @ifdef/@ifndef block
 
 type
+
+  { TCPCondState }
+  TCPCondState = record
+    Active: Boolean;
+    HadTrue: Boolean;
+    HadElse: Boolean;
+    ParentActive: Boolean;
+  end;
 
   { TCPParser }
   TCPParser = class(TBaseObject)
   private
     FLexer: TCPLexer;
     FMasterAST: TCPMasterAST;
+
+    // Conditional compilation
+    FDefines: TDictionary<string, string>;
+    FCondStack: TList<TCPCondState>;
+    procedure DoProcessConditionals();
+    procedure DoSkipFalseBranch();
+    procedure DoSetupPredefinedDefines(const AModuleKind: TCPModuleKind);
 
     // Token helpers
     function Current(): TCPToken;
@@ -150,6 +168,11 @@ type
     procedure SetErrors(const AErrors: TErrors); override;
     procedure SetStatusCallback(const ACallback: TStatusCallback; const AUserData: Pointer = nil); override;
 
+    // Conditional compilation defines
+    procedure SetDefine(const AName: string; const AValue: string);
+    procedure Undefine(const AName: string);
+    function IsDefined(const AName: string): Boolean;
+
     property Lexer: TCPLexer read FLexer;
     property MasterAST: TCPMasterAST read FMasterAST;
   end;
@@ -163,10 +186,14 @@ begin
 
   FLexer := TCPLexer.Create();
   FLexer.SetErrors(FErrors);
+  FDefines := TDictionary<string, string>.Create();
+  FCondStack := TList<TCPCondState>.Create();
 end;
 
 destructor TCPParser.Destroy();
 begin
+  FCondStack.Free();
+  FDefines.Free();
   FLexer.Free();
 
   inherited;
@@ -202,16 +229,29 @@ function TCPParser.Consume(): TCPToken;
 begin
   Result := FLexer.CurrentToken();
   FLexer.NextToken();
+  DoProcessConditionals();
 end;
 
 function TCPParser.Match(const AKind: TCPTokenKind): Boolean;
 begin
-  Result := FLexer.Match(AKind);
+  Result := Current().Kind = AKind;
+  if Result then
+  begin
+    FLexer.NextToken();
+    DoProcessConditionals();
+  end;
 end;
 
 function TCPParser.Expect(const AKind: TCPTokenKind): TCPToken;
 begin
-  Result := FLexer.Expect(AKind);
+  Result := Current();
+  if Result.Kind = AKind then
+  begin
+    FLexer.NextToken();
+    DoProcessConditionals();
+  end
+  else
+    FLexer.Expect(AKind);
 end;
 
 function TCPParser.Check(const AKind: TCPTokenKind): Boolean;
@@ -346,6 +386,298 @@ begin
     Result := ikLen;  // should never reach here
 end;
 
+// -- Conditional compilation ------------------------------------------------
+
+{ TCPParser.SetDefine }
+procedure TCPParser.SetDefine(const AName: string; const AValue: string);
+begin
+  FDefines.AddOrSetValue(AName, AValue);
+end;
+
+{ TCPParser.Undefine }
+procedure TCPParser.Undefine(const AName: string);
+begin
+  FDefines.Remove(AName);
+end;
+
+{ TCPParser.IsDefined }
+function TCPParser.IsDefined(const AName: string): Boolean;
+begin
+  Result := FDefines.ContainsKey(AName);
+end;
+
+{ TCPParser.DoProcessConditionals }
+procedure TCPParser.DoProcessConditionals();
+var
+  LTok: TCPToken;
+  LDirName: string;
+  LSymbol: string;
+  LState: TCPCondState;
+  LActive: Boolean;
+begin
+  while Current().Kind = tkDirective do
+  begin
+    LTok := Current();
+    LDirName := LTok.TokenText;
+
+    // @define SYMBOL
+    if LDirName = 'define' then
+    begin
+      FLexer.NextToken(); // consume @define
+      if Current().Kind = tkIdentifier then
+      begin
+        SetDefine(Current().TokenText, '1');
+        FLexer.NextToken(); // consume symbol
+      end
+      else
+        FErrors.Add(LTok.Location, esError, CP_ERR_PAR_020,
+          '@define requires an identifier argument');
+    end
+
+    // @undef SYMBOL
+    else if LDirName = 'undef' then
+    begin
+      FLexer.NextToken();
+      if Current().Kind = tkIdentifier then
+      begin
+        Undefine(Current().TokenText);
+        FLexer.NextToken();
+      end
+      else
+        FErrors.Add(LTok.Location, esError, CP_ERR_PAR_020,
+          '@undef requires an identifier argument');
+    end
+
+    // @ifdef SYMBOL
+    else if LDirName = 'ifdef' then
+    begin
+      FLexer.NextToken();
+      if Current().Kind = tkIdentifier then
+      begin
+        LSymbol := Current().TokenText;
+        FLexer.NextToken();
+      end
+      else
+      begin
+        FErrors.Add(LTok.Location, esError, CP_ERR_PAR_020,
+          '@ifdef requires an identifier argument');
+        LSymbol := '';
+      end;
+      LActive := IsDefined(LSymbol);
+      LState := Default(TCPCondState);
+      LState.Active := LActive;
+      LState.HadTrue := LActive;
+      LState.HadElse := False;
+      LState.ParentActive := True;
+      FCondStack.Add(LState);
+      if not LActive then
+        DoSkipFalseBranch();
+    end
+
+    // @ifndef SYMBOL
+    else if LDirName = 'ifndef' then
+    begin
+      FLexer.NextToken();
+      if Current().Kind = tkIdentifier then
+      begin
+        LSymbol := Current().TokenText;
+        FLexer.NextToken();
+      end
+      else
+      begin
+        FErrors.Add(LTok.Location, esError, CP_ERR_PAR_020,
+          '@ifndef requires an identifier argument');
+        LSymbol := '';
+      end;
+      LActive := not IsDefined(LSymbol);
+      LState := Default(TCPCondState);
+      LState.Active := LActive;
+      LState.HadTrue := LActive;
+      LState.HadElse := False;
+      LState.ParentActive := True;
+      FCondStack.Add(LState);
+      if not LActive then
+        DoSkipFalseBranch();
+    end
+
+    // @elseif SYMBOL
+    else if LDirName = 'elseif' then
+    begin
+      if FCondStack.Count = 0 then
+      begin
+        FErrors.Add(LTok.Location, esError, CP_ERR_PAR_021,
+          '@elseif without matching @ifdef');
+        FLexer.NextToken();
+      end
+      else
+      begin
+        // We were in a true branch that just ended -- skip until @endif
+        LState := FCondStack[FCondStack.Count - 1];
+        LState.HadTrue := True;
+        FCondStack[FCondStack.Count - 1] := LState;
+        DoSkipFalseBranch();
+      end;
+    end
+
+    // @else
+    else if LDirName = 'else' then
+    begin
+      if FCondStack.Count = 0 then
+      begin
+        FErrors.Add(LTok.Location, esError, CP_ERR_PAR_021,
+          '@else without matching @ifdef');
+        FLexer.NextToken();
+      end
+      else
+      begin
+        // We were in a true branch that just ended -- skip until @endif
+        LState := FCondStack[FCondStack.Count - 1];
+        LState.HadTrue := True;
+        LState.HadElse := True;
+        FCondStack[FCondStack.Count - 1] := LState;
+        DoSkipFalseBranch();
+      end;
+    end
+
+    // @endif
+    else if LDirName = 'endif' then
+    begin
+      if FCondStack.Count = 0 then
+        FErrors.Add(LTok.Location, esError, CP_ERR_PAR_021,
+          '@endif without matching @ifdef')
+      else
+        FCondStack.Delete(FCondStack.Count - 1);
+      FLexer.NextToken();
+    end
+
+    // Not a conditional directive -- stop processing, let parser handle it
+    else
+      Break;
+  end;
+end;
+
+{ TCPParser.DoSkipFalseBranch }
+procedure TCPParser.DoSkipFalseBranch();
+var
+  LDepth: Integer;
+  LDirName: string;
+  LState: TCPCondState;
+  LSymbol: string;
+begin
+  // Skip tokens until we find a matching @else/@elseif/@endif at depth 0
+  LDepth := 0;
+  while Current().Kind <> tkEOF do
+  begin
+    if Current().Kind = tkDirective then
+    begin
+      LDirName := Current().TokenText;
+
+      // Nested @ifdef/@ifndef increase depth
+      if (LDirName = 'ifdef') or (LDirName = 'ifndef') then
+      begin
+        Inc(LDepth);
+        FLexer.NextToken();
+        // Skip the symbol argument too
+        if Current().Kind = tkIdentifier then
+          FLexer.NextToken();
+        Continue;
+      end;
+
+      // @endif at our level means the conditional block is done
+      if LDirName = 'endif' then
+      begin
+        if LDepth > 0 then
+        begin
+          Dec(LDepth);
+          FLexer.NextToken();
+          Continue;
+        end;
+        // Our @endif -- pop the stack and advance past it
+        if FCondStack.Count > 0 then
+          FCondStack.Delete(FCondStack.Count - 1);
+        FLexer.NextToken();
+        Exit;
+      end;
+
+      // @else at our level -- check if we should start emitting
+      if (LDirName = 'else') and (LDepth = 0) then
+      begin
+        if FCondStack.Count > 0 then
+        begin
+          LState := FCondStack[FCondStack.Count - 1];
+          if not LState.HadTrue then
+          begin
+            // This @else branch is active
+            LState.Active := True;
+            LState.HadTrue := True;
+            LState.HadElse := True;
+            FCondStack[FCondStack.Count - 1] := LState;
+            FLexer.NextToken();
+            Exit;
+          end;
+        end;
+        FLexer.NextToken();
+        Continue;
+      end;
+
+      // @elseif at our level -- evaluate the condition
+      if (LDirName = 'elseif') and (LDepth = 0) then
+      begin
+        FLexer.NextToken(); // consume @elseif
+        LSymbol := '';
+        if Current().Kind = tkIdentifier then
+        begin
+          LSymbol := Current().TokenText;
+          FLexer.NextToken();
+        end;
+        if FCondStack.Count > 0 then
+        begin
+          LState := FCondStack[FCondStack.Count - 1];
+          if (not LState.HadTrue) and IsDefined(LSymbol) then
+          begin
+            // This @elseif branch is active
+            LState.Active := True;
+            LState.HadTrue := True;
+            FCondStack[FCondStack.Count - 1] := LState;
+            Exit;
+          end;
+        end;
+        Continue;
+      end;
+    end;
+
+    // Non-conditional token in false branch -- skip it
+    FLexer.NextToken();
+  end;
+
+  // Reached EOF without @endif
+  if FCondStack.Count > 0 then
+    FErrors.Add(Current().Location, esError, CP_ERR_PAR_022,
+      'Unterminated @ifdef/@ifndef block');
+end;
+
+{ TCPParser.DoSetupPredefinedDefines }
+procedure TCPParser.DoSetupPredefinedDefines(const AModuleKind: TCPModuleKind);
+begin
+  // Always defined
+  SetDefine('CPASKAL', '1');
+  SetDefine('CPUX64', '1');
+
+  // Module kind
+  Undefine('BUILD_EXE');
+  Undefine('BUILD_DLL');
+  Undefine('BUILD_LIB');
+  if AModuleKind = mkExe then
+    SetDefine('BUILD_EXE', '1')
+  else if AModuleKind = mkDll then
+    SetDefine('BUILD_DLL', '1')
+  else if AModuleKind = mkLib then
+    SetDefine('BUILD_LIB', '1');
+
+  // App type -- always console for now
+  SetDefine('APPTYPE_CONSOLE', '1');
+end;
+
 // -- Module structure -------------------------------------------------------
 
 function TCPParser.ParseModule(const AFilename: string; const AMasterAST: TCPMasterAST): TCPModuleNode;
@@ -363,6 +695,9 @@ begin
   if not FLexer.TokenizeFile(LNormalized) then
     Exit;
 
+  // Prime conditional processing for the first token position
+  DoProcessConditionals();
+
   // Create module node
   LModule := TCPModuleNode.Create();
   LModule.Location := Current().Location;
@@ -371,6 +706,9 @@ begin
   // module ModuleKind name;
   Expect(tkModule);
   LModule.ModuleKind := DoParseModuleKind();
+
+  // Set up predefined defines now that module kind is known
+  DoSetupPredefinedDefines(LModule.ModuleKind);
 
   if Current().Kind <> tkIdentifier then
   begin
@@ -540,7 +878,10 @@ begin
     begin
       Consume();
       // Parse multiple const declarations in the section
-      while (Current().Kind = tkIdentifier) or (Current().Kind = tkPublic) do
+      // Note: public followed by a section keyword (const/type/var/routine)
+      // starts a new section -- don't consume it here
+      while (Current().Kind = tkIdentifier) or
+            ((Current().Kind = tkPublic) and (PeekAt(1).Kind = tkIdentifier)) do
       begin
         if Current().Kind = tkPublic then
         begin
@@ -554,7 +895,8 @@ begin
     else if Check(tkType) then
     begin
       Consume();
-      while (Current().Kind = tkIdentifier) or (Current().Kind = tkPublic) do
+      while (Current().Kind = tkIdentifier) or
+            ((Current().Kind = tkPublic) and (PeekAt(1).Kind = tkIdentifier)) do
       begin
         if Current().Kind = tkPublic then
         begin
@@ -568,7 +910,8 @@ begin
     else if Check(tkVar) then
     begin
       Consume();
-      while (Current().Kind = tkIdentifier) or (Current().Kind = tkPublic) do
+      while (Current().Kind = tkIdentifier) or
+            ((Current().Kind = tkPublic) and (PeekAt(1).Kind = tkIdentifier)) do
       begin
         if Current().Kind = tkPublic then
         begin
@@ -683,7 +1026,7 @@ begin
       LTest.Free();
       Exit;
     end;
-    LTest.TestName := Current().TokenText;
+    LTest.TestName := Current().LiteralValue.AsString();
     Consume();
 
     // Optional var section
@@ -2324,13 +2667,22 @@ begin
     else if Check(tkLParen) then
     begin
       // Check for record literal: ident(fieldname: expr, ...)
-      // Record literal is when base is an identifier and first arg is ident:
-      if (LResult is TCPIdentifierNode) and
+      // Record literal is when base is an identifier or module-qualified dot access
+      // and first arg is ident followed by colon
+      if ((LResult is TCPIdentifierNode) or
+          ((LResult is TCPDotAccessNode) and (TCPDotAccessNode(LResult).BaseExpr is TCPIdentifierNode))) and
          (PeekAt(1).Kind = tkIdentifier) and (PeekAt(2).Kind = tkColon) then
       begin
         LRecLit := TCPRecordLiteralNode.Create();
         LRecLit.Location := LResult.Location;
-        LRecLit.TypeName := TCPIdentifierNode(LResult).IdentName;
+        if LResult is TCPDotAccessNode then
+        begin
+          // Module-qualified: probeunit.TPoint(x: 10, y: 20)
+          LRecLit.ModuleName := TCPIdentifierNode(TCPDotAccessNode(LResult).BaseExpr).IdentName;
+          LRecLit.TypeName := TCPDotAccessNode(LResult).MemberName;
+        end
+        else
+          LRecLit.TypeName := TCPIdentifierNode(LResult).IdentName;
         LResult.Free();
         Consume();  // consume (
 
