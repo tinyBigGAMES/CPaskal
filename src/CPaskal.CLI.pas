@@ -41,12 +41,14 @@ type
     FOutputPath: string;
     FSubsystem: string;
     FOptLevel: string;
+    FCImportFile: string;
     procedure ShowBanner();
     procedure ShowHelp();
     procedure ShowErrors();
     procedure SetupCallbacks();
     function ParseArgs(): Boolean;
     procedure DoCompile();
+    procedure DoCImport();
   public
     constructor Create();
     destructor Destroy(); override;
@@ -61,7 +63,8 @@ uses
   StdApp.Base,
   StdApp.Utils,
   CPaskal.Common,
-  CPaskal.ZigBuild;
+  CPaskal.ZigBuild,
+  CPaskal.CImporter.Script;
 
 { TCPCLI }
 
@@ -76,6 +79,7 @@ begin
   FOutputPath := '';
   FSubsystem := '';
   FOptLevel := '';
+  FCImportFile := '';
 end;
 
 destructor TCPCLI.Destroy();
@@ -119,6 +123,10 @@ begin
   TConsole.PrintLn('  ' + LExeName + ' ' + COLOR_CYAN +
     '<source>' + COLOR_RESET + ' [OPTIONS]');
   TConsole.PrintLn('');
+  TConsole.PrintLn(COLOR_BOLD + 'SUBCOMMANDS:');
+  TConsole.PrintLn('  ' + COLOR_CYAN + 'cimport <script.cis>   ' + COLOR_RESET +
+    '  Run a C import script to generate bindings');
+  TConsole.PrintLn('');
   TConsole.PrintLn(COLOR_BOLD + 'REQUIRED:');
   TConsole.PrintLn('  ' + COLOR_CYAN + '<source>' + COLOR_RESET +
     '                  CPaskal source file (.cpas)');
@@ -145,7 +153,7 @@ begin
   TConsole.PrintLn('  ' + COLOR_CYAN +
     LExeName + ' hello -r');
   TConsole.PrintLn('  ' + COLOR_CYAN +
-    LExeName + ' hello -r -t x86_64-linux-gnu');
+    LExeName + ' hello -r -t x86_64-linux');
   TConsole.PrintLn('  ' + COLOR_CYAN +
     LExeName + ' hello -r -opt release-fast');
   TConsole.PrintLn('');
@@ -271,8 +279,45 @@ begin
     end
     else
     begin
+      // Check for cimport subcommand
+      if (FSourceFile = '') and (FCImportFile = '') and
+         (LFlag.ToLower() = 'cimport') then
+      begin
+        Inc(LI);
+        if LI > ParamCount() then
+        begin
+          TConsole.PrintLn(COLOR_RED + 'Error: cimport requires a script file argument');
+          TConsole.PrintLn('');
+          TConsole.PrintLn(COLOR_BOLD + 'USAGE:');
+          TConsole.PrintLn('  ' + TPath.GetFileNameWithoutExtension(ParamStr(0)) +
+            ' ' + COLOR_CYAN + 'cimport <script.cis>' + COLOR_RESET);
+          TConsole.PrintLn('');
+          ExitCode := 2;
+          Result := False;
+          Exit;
+        end;
+        FCImportFile := ParamStr(LI).Trim();
+        if (FCImportFile = '-h') or (FCImportFile = '--help') then
+        begin
+          FCImportFile := '-h';
+        end
+        else
+        begin
+          if not FCImportFile.EndsWith('.cis', True) then
+            FCImportFile := FCImportFile + '.cis';
+          if not TFile.Exists(FCImportFile) then
+          begin
+            TConsole.PrintLn(COLOR_RED +
+              'Error: Script file not found: ' + COLOR_YELLOW + FCImportFile);
+            TConsole.PrintLn('');
+            ExitCode := 2;
+            Result := False;
+            Exit;
+          end;
+        end;
+      end
       // Positional argument: source file
-      if FSourceFile = '' then
+      else if FSourceFile = '' then
         FSourceFile := LFlag
       else
       begin
@@ -288,8 +333,8 @@ begin
     Inc(LI);
   end;
 
-  // Validate: source file is required
-  if FSourceFile = '' then
+  // Validate: source file is required (unless cimport mode)
+  if (FSourceFile = '') and (FCImportFile = '') then
   begin
     TConsole.PrintLn(COLOR_RED +
       'Error: Source file is required');
@@ -303,18 +348,22 @@ begin
     Exit;
   end;
 
-  // Normalize source file extension
-  FSourceFile := TPath.ChangeExtension(FSourceFile, CP_SRC_EXT);
-
-  // Validate: source file must exist
-  if not TFile.Exists(FSourceFile) then
+  // Source file validation (skip in cimport mode)
+  if FSourceFile <> '' then
   begin
-    TConsole.PrintLn(COLOR_RED +
-      'Error: Source file not found: ' + COLOR_YELLOW + FSourceFile);
-    TConsole.PrintLn('');
-    ExitCode := 2;
-    Result := False;
-    Exit;
+    // Normalize source file extension
+    FSourceFile := TPath.ChangeExtension(FSourceFile, CP_SRC_EXT);
+
+    // Validate: source file must exist
+    if not TFile.Exists(FSourceFile) then
+    begin
+      TConsole.PrintLn(COLOR_RED +
+        'Error: Source file not found: ' + COLOR_YELLOW + FSourceFile);
+      TConsole.PrintLn('');
+      ExitCode := 2;
+      Result := False;
+      Exit;
+    end;
   end;
 end;
 
@@ -363,6 +412,41 @@ begin
     ExitCode := FCompiler.GetLastExitCode();
 end;
 
+procedure TCPCLI.DoCImport();
+var
+  LScript: TCPCImportScript;
+begin
+  LScript := TCPCImportScript.Create();
+  try
+    LScript.SetStatusCallback(
+      procedure(const AText: string; const AUserData: Pointer)
+      begin
+        TConsole.PrintLn(AText);
+      end, nil);
+
+    if FCImportFile = '-h' then
+    begin
+      LScript.ShowHelp();
+      Exit;
+    end;
+
+    if not LScript.ExecuteFile(FCImportFile) then
+    begin
+      LScript.PrintErrors();
+      TConsole.PrintLn('');
+      TConsole.PrintLn(COLOR_RED + 'CImport failed.');
+      ExitCode := 1;
+    end
+    else
+    begin
+      TConsole.PrintLn(COLOR_GREEN + 'CImport completed successfully.');
+      ExitCode := 0;
+    end;
+  finally
+    LScript.Free();
+  end;
+end;
+
 procedure TCPCLI.Execute();
 begin
   ShowBanner();
@@ -371,7 +455,10 @@ begin
     Exit;
 
   try
-    DoCompile();
+    if FCImportFile <> '' then
+      DoCImport()
+    else
+      DoCompile();
   except
     on E: Exception do
     begin
