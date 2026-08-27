@@ -241,6 +241,7 @@ type
     FDeclarations: TObjectList<TCPASTNode>;
     FInitBody: TObjectList<TCPASTNode>;
     FFinalBody: TObjectList<TCPASTNode>;
+    FHasMainBody: Boolean;
     FMainBody: TObjectList<TCPASTNode>;
     FTestBlocks: TObjectList<TCPTestBlockNode>;
     FResolvedTarget: TCPTargetPlatform;
@@ -256,6 +257,7 @@ type
     property Declarations: TObjectList<TCPASTNode> read FDeclarations;
     property InitBody: TObjectList<TCPASTNode> read FInitBody;
     property FinalBody: TObjectList<TCPASTNode> read FFinalBody;
+    property HasMainBody: Boolean read FHasMainBody write FHasMainBody;
     property MainBody: TObjectList<TCPASTNode> read FMainBody;
     property TestBlocks: TObjectList<TCPTestBlockNode> read FTestBlocks;
     property ResolvedTarget: TCPTargetPlatform read FResolvedTarget write FResolvedTarget;
@@ -267,11 +269,15 @@ type
   protected
     FDirectiveName: string;
     FDirectiveValue: string;
+    FDirectiveValue2: string;
     FResolvedValue: string;
+    FResolvedValue2: string;
   public
     property DirectiveName: string read FDirectiveName write FDirectiveName;
     property DirectiveValue: string read FDirectiveValue write FDirectiveValue;
+    property DirectiveValue2: string read FDirectiveValue2 write FDirectiveValue2;
     property ResolvedValue: string read FResolvedValue write FResolvedValue;
+    property ResolvedValue2: string read FResolvedValue2 write FResolvedValue2;
   end;
 
   { TCPImportNode }

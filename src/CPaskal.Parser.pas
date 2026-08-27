@@ -730,7 +730,13 @@ begin
     Exit;
   end;
   LModule.ModuleName := Consume().TokenText;
-  Expect(tkSemicolon);
+
+  // Expect semicolon but advance without DoProcessConditionals so that
+  // any @ifdef block in the directive section is left for DoParseDirectives
+  if Current().Kind = tkSemicolon then
+    FLexer.NextToken()
+  else
+    FLexer.Expect(tkSemicolon);
 
   // Directives, imports, declarations
   DoParseDirectives(LModule);
@@ -808,13 +814,28 @@ end;
 procedure TCPParser.DoParseDirectives(const AModule: TCPModuleNode);
 var
   LDirective: TCPDirectiveNode;
+  LName: string;
 begin
   // Directives start with @ (tkDirective)
   while Current().Kind = tkDirective do
   begin
+    LName := Current().TokenText;
+
+    // Conditional compilation directives are handled by DoProcessConditionals,
+    // which manages the condition stack and skips inactive branches.
+    if LName.StartsWith('define') or LName.StartsWith('undef') or
+       LName.StartsWith('ifdef') or LName.StartsWith('ifndef') or
+       LName.StartsWith('elseif') or
+       (LName = 'else') or (LName = 'endif') then
+    begin
+      DoProcessConditionals();
+      Continue;
+    end;
+
+    // Content directive (copydll, librarypath, target, etc.)
     LDirective := TCPDirectiveNode.Create();
     LDirective.Location := Current().Location;
-    LDirective.DirectiveName := Current().TokenText;
+    LDirective.DirectiveName := LName;
     Consume();
 
     // Directive value: string, integer, float, or identifier
@@ -825,18 +846,17 @@ begin
     begin
       LDirective.DirectiveValue := Current().TokenText;
       Consume();
+
+      // Second value for @message: severity followed by text
+      if (LDirective.DirectiveName = 'message') and
+         (Current().Kind = tkStringLiteral) then
+      begin
+        LDirective.DirectiveValue2 := Current().TokenText;
+        Consume();
+      end;
     end;
 
-    // Conditional compilation directives have no semicolon terminator
-    if not (LDirective.DirectiveName.StartsWith('define') or
-            LDirective.DirectiveName.StartsWith('undef') or
-            LDirective.DirectiveName.StartsWith('ifdef') or
-            LDirective.DirectiveName.StartsWith('ifndef') or
-            LDirective.DirectiveName.StartsWith('elseif') or
-            (LDirective.DirectiveName = 'else') or
-            (LDirective.DirectiveName = 'endif')) then
-      Expect(tkSemicolon);
-
+    Expect(tkSemicolon);
     AModule.Directives.Add(LDirective);
   end;
 end;
@@ -1008,6 +1028,7 @@ begin
     Exit;
   end;
 
+  AModule.HasMainBody := True;
   Consume(); // consume 'begin'
 
   LBody := DoParseStatementSeq([tkEnd]);
@@ -1499,6 +1520,9 @@ begin
         end
         else
           LAnon.Fields.Add(DoParseFieldDecl());
+
+        if FErrors.HasErrors() then
+          Break;
       end;
       Expect(tkEnd);
       Expect(tkSemicolon);
@@ -1506,6 +1530,9 @@ begin
     end
     else
       Result.Fields.Add(DoParseFieldDecl());
+
+    if FErrors.HasErrors() then
+      Break;
   end;
 
   Expect(tkEnd);
@@ -1529,13 +1556,20 @@ begin
       if Match(tkPacked) then
         LAnon.IsPacked := True;
       while not (Check(tkEnd) or Check(tkEOF)) do
+      begin
         LAnon.Fields.Add(DoParseFieldDecl());
+        if FErrors.HasErrors() then
+          Break;
+      end;
       Expect(tkEnd);
       Expect(tkSemicolon);
       Result.Fields.Add(LAnon);
     end
     else
       Result.Fields.Add(DoParseFieldDecl());
+
+    if FErrors.HasErrors() then
+      Break;
   end;
 
   Expect(tkEnd);

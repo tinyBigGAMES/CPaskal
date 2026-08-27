@@ -109,6 +109,7 @@ type
       const ACategory: TCPTokenCategory); overload;
     procedure AddKeyword(const AText: string; const AKind: TCPTokenKind;
       const ACategory: TCPTokenCategory; const ACppType: string); overload;
+    function IsKeyword(const AName: string): Boolean;
 
     // Navigation API (used by parser)
     function CurrentToken(): TCPToken;
@@ -180,6 +181,12 @@ procedure TCPLexer.AddKeyword(const AText: string; const AKind: TCPTokenKind;
 begin
   AddKeyword(AText, AKind, ACategory);
   FCppTypes.AddOrSetValue(AKind, ACppType);
+end;
+
+{ TCPLexer.IsKeyword }
+function TCPLexer.IsKeyword(const AName: string): Boolean;
+begin
+  Result := FKeywords.ContainsKey(AName.ToLower());
 end;
 
 procedure TCPLexer.RegisterKeywords();

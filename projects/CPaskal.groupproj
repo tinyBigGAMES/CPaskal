@@ -3,6 +3,9 @@
         <ProjectGuid>{9A2B5F2D-80BE-48D9-ACCD-6A57FFBC5EEE}</ProjectGuid>
     </PropertyGroup>
     <ItemGroup>
+        <Projects Include="ImportLibs\ImportLibs.dproj">
+            <Dependencies/>
+        </Projects>
         <Projects Include="CPAS\cpas.dproj">
             <Dependencies/>
         </Projects>
@@ -17,6 +20,15 @@
             <Default.Personality/>
         </BorlandProject>
     </ProjectExtensions>
+    <Target Name="ImportLibs">
+        <MSBuild Projects="ImportLibs\ImportLibs.dproj"/>
+    </Target>
+    <Target Name="ImportLibs:Clean">
+        <MSBuild Projects="ImportLibs\ImportLibs.dproj" Targets="Clean"/>
+    </Target>
+    <Target Name="ImportLibs:Make">
+        <MSBuild Projects="ImportLibs\ImportLibs.dproj" Targets="Make"/>
+    </Target>
     <Target Name="cpas">
         <MSBuild Projects="CPAS\cpas.dproj"/>
     </Target>
@@ -36,13 +48,13 @@
         <MSBuild Projects="Testbed\Testbed.dproj" Targets="Make"/>
     </Target>
     <Target Name="Build">
-        <CallTarget Targets="cpas;Testbed"/>
+        <CallTarget Targets="ImportLibs;cpas;Testbed"/>
     </Target>
     <Target Name="Clean">
-        <CallTarget Targets="cpas:Clean;Testbed:Clean"/>
+        <CallTarget Targets="ImportLibs:Clean;cpas:Clean;Testbed:Clean"/>
     </Target>
     <Target Name="Make">
-        <CallTarget Targets="cpas:Make;Testbed:Make"/>
+        <CallTarget Targets="ImportLibs:Make;cpas:Make;Testbed:Make"/>
     </Target>
     <Import Project="$(BDS)\Bin\CodeGear.Group.Targets" Condition="Exists('$(BDS)\Bin\CodeGear.Group.Targets')"/>
 </Project>

@@ -2054,6 +2054,32 @@ begin
   TUtils.SetEnv('ZIG_GLOBAL_CACHE_DIR',
     TPath.Combine(GetZigPath(), '.zig-cache'));
 
+  // Copy DLLs into the output directory BEFORE building so the linker can find them
+  if FCopyDLLs.Count > 0 then
+  begin
+    LDestDir := TPath.Combine(FOutputPath, TPath.Combine('zig-out', 'bin'));
+    TUtils.CreateDirInPath(LDestDir);
+    for LI := 0 to FCopyDLLs.Count - 1 do
+    begin
+      LSrcPath := ResolvePath('', FCopyDLLs[LI]);
+
+      // Skip if the source already sits in the destination directory
+      if SameText(TPath.GetFullPath(TPath.GetDirectoryName(LSrcPath)),
+        TPath.GetFullPath(LDestDir)) then
+        Continue;
+
+      if TFile.Exists(LSrcPath) then
+      begin
+        LDestPath := TPath.Combine(LDestDir, TPath.GetFileName(LSrcPath));
+        Status(RSZigBuildCopying, [TPath.GetFileName(LSrcPath)]);
+        TFile.Copy(LSrcPath, LDestPath, True);
+      end
+      else if Assigned(FErrors) then
+        FErrors.Add(esWarning, CP_ERR_ZIGBUILD_WRNCANNOTRUN, RSZigBuildDllNotFound,
+          [LSrcPath]);
+    end;
+  end;
+
   // Run zig build
   Status(RSZigBuildBuilding, [FProjectName]);
   TUtils.CaptureConsolePTY(
@@ -2085,31 +2111,6 @@ begin
       TPath.Combine('zig-out', TPath.Combine('bin', GetOutputFilename())));
   Status(RSZigBuildOutput,
     [TUtils.NormalizePath(TPath.GetFullPath(LOutputFile))]);
-
-  // Copy runtime DLLs into the output directory
-  if FCopyDLLs.Count > 0 then
-  begin
-    LDestDir := TPath.Combine(FOutputPath, TPath.Combine('zig-out', 'bin'));
-    for LI := 0 to FCopyDLLs.Count - 1 do
-    begin
-      LSrcPath := ResolvePath('', FCopyDLLs[LI]);
-
-      // Skip if the source already sits in the destination directory
-      if SameText(TPath.GetFullPath(TPath.GetDirectoryName(LSrcPath)),
-        TPath.GetFullPath(LDestDir)) then
-        Continue;
-
-      if TFile.Exists(LSrcPath) then
-      begin
-        LDestPath := TPath.Combine(LDestDir, TPath.GetFileName(LSrcPath));
-        Status(RSZigBuildCopying, [TPath.GetFileName(LSrcPath)]);
-        TFile.Copy(LSrcPath, LDestPath, True);
-      end
-      else if Assigned(FErrors) then
-        FErrors.Add(esWarning, CP_ERR_ZIGBUILD_WRNCANNOTRUN, RSZigBuildDllNotFound,
-          [LSrcPath]);
-    end;
-  end;
 
   // Apply post-build resources (manifest, icon, version info)
   ApplyPostBuildResources(LOutputFile);

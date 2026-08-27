@@ -86,7 +86,9 @@ type
     FPreParseCallbacks: TPreParseCallbackList;
     FPreBuildCallbacks: TPreBuildCallbackList;
     FKeyValues: TDictionary<string, string>;
+    FModulePaths: TStringList;
     procedure DoProcessDirectives();
+    procedure DoProcessImportedModuleDirectives(const AModule: TCPModuleNode);
     procedure DoFirePreParseCallbacks();
     procedure DoFirePreBuildCallbacks();
     procedure DoSetupPlatformDefines();
@@ -141,6 +143,7 @@ type
     procedure AddLinkLibrary(const ALibrary: string);
     procedure AddLinkLibraries(const ALibraries: array of string);
     procedure AddLibraryPath(const APath: string);
+    procedure AddModulePath(const APath: string);
 
     // Post-build
     procedure AddCopyDLL(const ADLLPath: string);
@@ -218,12 +221,15 @@ begin
   FPreParseCallbacks := TPreParseCallbackList.Create();
   FPreBuildCallbacks := TPreBuildCallbackList.Create();
   FKeyValues := TDictionary<string, string>.Create();
+  FModulePaths := TStringList.Create();
+  FModulePaths.Duplicates := dupIgnore;
   FMasterAST := nil;
 end;
 
 destructor TCPCompiler.Destroy();
 begin
   FMasterAST.Free();
+  FModulePaths.Free();
   FKeyValues.Free();
   FPreBuildCallbacks.Free();
   FPreParseCallbacks.Free();
@@ -252,32 +258,37 @@ end;
 procedure TCPCompiler.DoSetupPlatformDefines();
 var
   LTarget: string;
+  LPlatform: TCPTargetPlatform;
   LOptLevel: string;
 begin
   // Platform defines based on target -- key-value store overrides FZigBuild default
   FParser.Undefine('WINDOWS');
   FParser.Undefine('MSWINDOWS');
   FParser.Undefine('WIN64');
-  FParser.Undefine('TARGET_WIN64');
+  FParser.Undefine('TARGET_X86_64_WINDOWS');
   FParser.Undefine('LINUX');
-  FParser.Undefine('TARGET_LINUX64');
+  FParser.Undefine('TARGET_X86_64_LINUX');
 
   LTarget := GetKeyValue('target');
   if LTarget = '' then
     LTarget := FZigBuild.GetTarget();
-  LTarget := LTarget.ToLower();
 
-  if LTarget.Contains('linux') then
+  if cpTryParseTarget(LTarget, LPlatform) or cpTryParseTriple(LTarget, LPlatform) then
   begin
-    FParser.SetDefine('LINUX', '1');
-    FParser.SetDefine('TARGET_LINUX64', '1');
-  end
-  else
-  begin
-    FParser.SetDefine('WINDOWS', '1');
-    FParser.SetDefine('MSWINDOWS', '1');
-    FParser.SetDefine('WIN64', '1');
-    FParser.SetDefine('TARGET_WIN64', '1');
+    case LPlatform of
+      tpX86_64_Linux:
+      begin
+        FParser.SetDefine('LINUX', '1');
+        FParser.SetDefine('TARGET_X86_64_LINUX', '1');
+      end;
+      tpX86_64_Windows:
+      begin
+        FParser.SetDefine('WINDOWS', '1');
+        FParser.SetDefine('MSWINDOWS', '1');
+        FParser.SetDefine('WIN64', '1');
+        FParser.SetDefine('TARGET_X86_64_WINDOWS', '1');
+      end;
+    end;
   end;
 
   // Optimization level -- key-value store overrides FZigBuild default
@@ -357,8 +368,61 @@ begin
     else if LName = 'librarypath' then
     begin
       AddLibraryPath(LDir.ResolvedValue);
+    end
+    else if LName = 'copydll' then
+    begin
+      AddCopyDLL(TUtils.ResolvePath(LDir.ResolvedValue));
+    end
+    else if LName = 'addlinklibrary' then
+    begin
+      AddLibraryPath(TUtils.ResolvePath(LDir.ResolvedValue));
+    end
+    else if LName = 'message' then
+    begin
+      LValue := LDir.ResolvedValue.ToLower();
+      if LValue = 'hint' then
+        FErrors.Add(LDir.Location, esHint, CP_ERR_CMP_001, '%s', [LDir.ResolvedValue2])
+      else if LValue = 'warn' then
+        FErrors.Add(LDir.Location, esWarning, CP_ERR_CMP_001, '%s', [LDir.ResolvedValue2])
+      else if LValue = 'error' then
+        FErrors.Add(LDir.Location, esError, CP_ERR_CMP_001, '%s', [LDir.ResolvedValue2])
+      else if LValue = 'fatal' then
+        FErrors.Add(LDir.Location, esFatal, CP_ERR_CMP_001, '%s', [LDir.ResolvedValue2])
+      else
+        FErrors.Add(LDir.Location, esWarning, CP_ERR_CMP_001,
+          'Unknown @message severity ''%s''; expected hint, warn, error, or fatal',
+          [LDir.DirectiveValue]);
+    end
+    else if LName = 'modulepath' then
+    begin
+      AddModulePath(TUtils.ResolvePath(LDir.ResolvedValue));
     end;
-    // @modulepath handled during import resolution (not here)
+  end;
+
+  // Resource directives from imported modules (copydll, librarypath)
+  for I := 1 to FMasterAST.Modules.Count - 1 do
+    DoProcessImportedModuleDirectives(FMasterAST.Modules[I]);
+end;
+
+{ TCPCompiler.DoProcessImportedModuleDirectives }
+procedure TCPCompiler.DoProcessImportedModuleDirectives(
+  const AModule: TCPModuleNode);
+var
+  LDir: TCPDirectiveNode;
+  LName: string;
+  I: Integer;
+begin
+  for I := 0 to AModule.Directives.Count - 1 do
+  begin
+    LDir := AModule.Directives[I];
+    LName := LDir.DirectiveName.ToLower();
+
+    if LName = 'copydll' then
+      AddCopyDLL(TUtils.ResolvePath(LDir.ResolvedValue))
+    else if LName = 'addlinklibrary' then
+      AddLibraryPath(TUtils.ResolvePath(LDir.ResolvedValue))
+    else if LName = 'librarypath' then
+      AddLibraryPath(LDir.ResolvedValue);
   end;
 end;
 
@@ -598,6 +662,9 @@ begin
   // Set up platform defines before parsing begins
   DoSetupPlatformDefines();
 
+  // Default module search paths
+  AddModulePath(TUtils.ResolvePath('$P:res/libs/std'));
+
   // Parse the main module, then process any imports it declares
   Status('Parsing %s...', [TPath.GetFileName(LSourceFile)]);
   LModule := FParser.ParseModule(LSourceFile, FMasterAST);
@@ -606,6 +673,14 @@ begin
   FMasterAST.AddModule(LModule);
   if FErrors.HasErrors() then
     Exit;
+
+  // Collect @modulepath directives from main module before resolving imports
+  for I := 0 to LModule.Directives.Count - 1 do
+  begin
+    if LModule.Directives[I].DirectiveName.ToLower() = 'modulepath' then
+      AddModulePath(TUtils.ResolvePath(
+        LModule.Directives[I].DirectiveValue.DeQuotedString('"')));
+  end;
 
   // Process pending imports until queue is empty
   while FMasterAST.HasPending() do
@@ -617,7 +692,17 @@ begin
     LPendingFile := TPath.Combine(LSourceDir,
       TPath.ChangeExtension(LPendingName, CP_SRC_EXT));
 
-    // TODO: search @modulepath directories if not found in source dir
+    // Search @modulepath directories if not found in source dir
+    if not TFile.Exists(LPendingFile) then
+    begin
+      for I := 0 to FModulePaths.Count - 1 do
+      begin
+        LPendingFile := TPath.Combine(FModulePaths[I],
+          TPath.ChangeExtension(LPendingName, CP_SRC_EXT));
+        if TFile.Exists(LPendingFile) then
+          Break;
+      end;
+    end;
 
     if not TFile.Exists(LPendingFile) then
     begin
@@ -828,6 +913,13 @@ end;
 procedure TCPCompiler.AddLibraryPath(const APath: string);
 begin
   FZigBuild.AddLibraryPath(APath);
+end;
+
+{ TCPCompiler.AddModulePath }
+procedure TCPCompiler.AddModulePath(const APath: string);
+begin
+  if APath <> '' then
+    FModulePaths.Add(APath);
 end;
 
 procedure TCPCompiler.AddCopyDLL(const ADLLPath: string);

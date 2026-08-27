@@ -96,3 +96,8 @@ bin/build.toml
 /distro
 bin/res/tests/probe.cpas
 bin/res/tests/probe_usedll.cpas
+/bin/res/libs/vendor
+bin/res/tests/probe2.cpas
+/projects/ImportLibs
+/projects/Testbed
+bin/debug_dir.txt

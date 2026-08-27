@@ -224,6 +224,9 @@ type
 { cpTargetTriple }
 function cpTargetTriple(const ATarget: TCPTargetPlatform): string;
 
+{ cpTryParseTriple }
+function cpTryParseTriple(const ATriple: string; out ATarget: TCPTargetPlatform): Boolean;
+
 { cpTryParseTarget }
 function cpTryParseTarget(const AValue: string; out ATarget: TCPTargetPlatform): Boolean;
 
@@ -269,6 +272,21 @@ begin
     tpX86_64_Windows: Result := 'x86_64-windows-gnu';
     tpX86_64_Linux: Result := 'x86_64-linux-gnu';
   end;
+end;
+
+{ cpTryParseTriple }
+function cpTryParseTriple(const ATriple: string; out ATarget: TCPTargetPlatform): Boolean;
+var
+  LLower: string;
+begin
+  Result := True;
+  LLower := ATriple.ToLower();
+  if LLower = 'x86_64-windows-gnu' then
+    ATarget := tpX86_64_Windows
+  else if LLower = 'x86_64-linux-gnu' then
+    ATarget := tpX86_64_Linux
+  else
+    Result := False;
 end;
 
 { cpTryParseTarget }

@@ -423,14 +423,14 @@ begin
   if AModule.ModuleKind = mkExe then
   begin
     // exe must have an entry point
-    if AModule.MainBody.Count = 0 then
+    if not AModule.HasMainBody then
       FErrors.Add(AModule.Location, esError, CP_ERR_SEM_022,
         RSSemExeMissingMain, []);
   end
   else
   begin
     // dll, lib, unit must NOT have a begin...end block
-    if AModule.MainBody.Count > 0 then
+    if AModule.HasMainBody then
     begin
       if AModule.ModuleKind = mkDll then
         FErrors.Add(AModule.Location, esError, CP_ERR_SEM_022,
@@ -444,16 +444,20 @@ begin
     end;
   end;
 
-  // Resolve directives (main module only)
+  // Resolve directive values for all modules
+  for I := 0 to AModule.Directives.Count - 1 do
+  begin
+    LDir := AModule.Directives[I];
+    LDir.ResolvedValue := LDir.DirectiveValue.DeQuotedString('"');
+    LDir.ResolvedValue2 := LDir.DirectiveValue2.DeQuotedString('"');
+  end;
+
+  // Target directive validation (main module only)
   if AModule = FMasterAST.Modules[0] then
   begin
     for I := 0 to AModule.Directives.Count - 1 do
     begin
       LDir := AModule.Directives[I];
-
-      // Resolve directive value: strip quotes from string literals
-      LDir.ResolvedValue := LDir.DirectiveValue.DeQuotedString('"');
-
       if LDir.DirectiveName.ToLower() = 'target' then
       begin
         if cpTryParseTarget(LDir.ResolvedValue, LTarget) then
@@ -842,7 +846,9 @@ begin
   else if ANode is TCPAnonOverlayNode then
     DoAnalyzeAnonOverlay(TCPAnonOverlayNode(ANode))
   else if ANode is TCPAnonRecordNode then
-    DoAnalyzeAnonRecord(TCPAnonRecordNode(ANode));
+    DoAnalyzeAnonRecord(TCPAnonRecordNode(ANode))
+  else if ANode is TCPTypeRefNode then
+    ResolveTypeExpr(ANode);
 end;
 
 procedure TCPSemantics.DoAnalyzeRecordType(const ANode: TCPRecordTypeNode);

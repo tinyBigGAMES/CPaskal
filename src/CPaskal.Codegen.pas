@@ -457,6 +457,8 @@ begin
 
   if ANode is TCPConstDeclNode then
     EmitConstDecl(TCPConstDeclNode(ANode))
+  else if ANode is TCPForwardTypeDeclNode then
+    FOutput.EmitLine('struct ' + TCPForwardTypeDeclNode(ANode).DeclName + ';', otHeader)
   else if ANode is TCPTypeDeclNode then
     EmitTypeDecl(TCPTypeDeclNode(ANode))
   else if ANode is TCPVarDeclNode then
@@ -1798,6 +1800,8 @@ begin
     // User-defined types: follow ResolvedDecl to the type declaration
     else if TCPTypeRefNode(ANode).ResolvedDecl is TCPTypeDeclNode then
       Result := TCPTypeDeclNode(TCPTypeRefNode(ANode).ResolvedDecl).DeclName
+    else if TCPTypeRefNode(ANode).ResolvedDecl is TCPForwardTypeDeclNode then
+      Result := TCPForwardTypeDeclNode(TCPTypeRefNode(ANode).ResolvedDecl).DeclName
     else
       Result := 'auto'; // fallback
   end

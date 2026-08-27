@@ -1016,10 +1016,9 @@ begin
   @endif
 
   // Platform defines
-  @ifdef TARGET_LINUX64
+  @ifdef TARGET_X86_64_WINDOWS
     cc_result := cc_result + 1;
-  @endif
-  @ifdef TARGET_WIN64
+  @elseif TARGET_X86_64_LINUX
     cc_result := cc_result + 1;
   @endif
 
