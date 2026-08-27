@@ -267,9 +267,11 @@ type
   protected
     FDirectiveName: string;
     FDirectiveValue: string;
+    FResolvedValue: string;
   public
     property DirectiveName: string read FDirectiveName write FDirectiveName;
     property DirectiveValue: string read FDirectiveValue write FDirectiveValue;
+    property ResolvedValue: string read FResolvedValue write FResolvedValue;
   end;
 
   { TCPImportNode }

@@ -77,7 +77,7 @@ begin
         TConsole.Print(ALine);
       end, nil);
 
-    LSourceFile := TUtils.ResolvePath('$P:res\tests\bnf_compliance');
+    LSourceFile := TUtils.ResolvePath('$P:res\tests\probe2');
     LOutputPath := TUtils.ResolvePath('$P:output');
 
     TConsole.PrintLn('Source: %s', [LSourceFile]);

@@ -356,7 +356,7 @@ begin
     end
     else if LName = 'librarypath' then
     begin
-      FZigBuild.AddLibraryPath(LDir.DirectiveValue);
+      AddLibraryPath(LDir.ResolvedValue);
     end;
     // @modulepath handled during import resolution (not here)
   end;
@@ -646,13 +646,6 @@ begin
       Exit;
   end;
 
-  // Process directives from main module only (build config)
-  Status('Processing directives...');
-  DoProcessDirectives();
-
-  // Apply CLI directive overrides from key-value store
-  DoCLIDirectives();
-
   // Fire pre-build callbacks (user hooks)
   Status('Processing pre-build callbacks...');
   DoFirePreBuildCallbacks();
@@ -668,6 +661,13 @@ begin
   FErrors.RaiseOnError := False;
   if FErrors.HasErrors() then
     Exit;
+
+  // Process directives from enriched AST (after semantics)
+  Status('Processing directives...');
+  DoProcessDirectives();
+
+  // Apply CLI directive overrides from key-value store
+  DoCLIDirectives();
 
   // Unit modules: validate only, no codegen or build
   if DoValidateUnitModule() then

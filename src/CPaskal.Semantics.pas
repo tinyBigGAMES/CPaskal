@@ -450,16 +450,20 @@ begin
     for I := 0 to AModule.Directives.Count - 1 do
     begin
       LDir := AModule.Directives[I];
+
+      // Resolve directive value: strip quotes from string literals
+      LDir.ResolvedValue := LDir.DirectiveValue.DeQuotedString('"');
+
       if LDir.DirectiveName.ToLower() = 'target' then
       begin
-        if cpTryParseTarget(LDir.DirectiveValue, LTarget) then
+        if cpTryParseTarget(LDir.ResolvedValue, LTarget) then
         begin
           AModule.ResolvedTarget := LTarget;
           AModule.ResolvedTargetTriple := cpTargetTriple(LTarget);
         end
         else
           FErrors.Add(LDir.Location, esError, CP_ERR_SEM_023,
-            RSSemInvalidTarget, [LDir.DirectiveValue]);
+            RSSemInvalidTarget, [LDir.ResolvedValue]);
       end;
     end;
   end;

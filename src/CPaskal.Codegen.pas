@@ -632,8 +632,9 @@ begin
     end
     else
     begin
-      FOutput.EmitLine('extern ' + LType + ' ' + ANode.DeclName + ';', otHeader);
-      FOutput.EmitLine(LType + ' ' + ANode.DeclName + LInit + ';', otSource);
+      // Non-DLL: vars always use C linkage
+      FOutput.EmitLine('extern "C" ' + LType + ' ' + ANode.DeclName + ';', otHeader);
+      FOutput.EmitLine('extern "C" ' + LType + ' ' + ANode.DeclName + LInit + ';', otSource);
     end;
   end
   else
@@ -703,20 +704,26 @@ begin
   begin
     if FCurrentModule.ModuleKind = mkDll then
     begin
-      if ANode.Linkage = lkCLink then
+      if ANode.Linkage <> lkCppLink then
         FOutput.EmitLine('extern "C" CP_EXPORT ' + LRetType + ' ' +
           ANode.DeclName + '(' + LSig + ');', otHeader)
       else
         FOutput.EmitLine('CP_EXPORT ' + LRetType + ' ' +
           ANode.DeclName + '(' + LSig + ');', otHeader);
     end
+    else if ANode.Linkage <> lkCppLink then
+      FOutput.EmitLine('extern "C" ' + LRetType + ' ' + ANode.DeclName +
+        '(' + LSig + ');', otHeader)
     else
       FOutput.EmitLine(LRetType + ' ' + ANode.DeclName + '(' + LSig + ');', otHeader);
   end;
 
   // Function body in source
   FOutput.BlankLine(otSource);
-  FOutput.EmitLine(LRetType + ' ' + ANode.DeclName + '(' + LSig + ') {', otSource);
+  if ANode.IsPublic and (ANode.Linkage <> lkCppLink) then
+    FOutput.EmitLine('extern "C" ' + LRetType + ' ' + ANode.DeclName + '(' + LSig + ') {', otSource)
+  else
+    FOutput.EmitLine(LRetType + ' ' + ANode.DeclName + '(' + LSig + ') {', otSource);
   FOutput.IndentIn();
 
   // Local types
