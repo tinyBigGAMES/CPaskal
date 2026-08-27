@@ -128,6 +128,8 @@
         </DelphiCompile>
         <DCCReference Include="UCPAS.pas"/>
         <DCCReference Include="..\..\src\CPaskal.CLI.pas"/>
+        <DCCReference Include="..\..\src\CPaskal.CImporter.Script.pas"/>
+        <DCCReference Include="..\..\src\CPaskal.CImporter.pas"/>
         <BuildConfiguration Include="Base">
             <Key>Base</Key>
         </BuildConfiguration>

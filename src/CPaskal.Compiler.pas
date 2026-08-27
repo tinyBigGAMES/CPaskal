@@ -89,6 +89,22 @@ type
     FModulePaths: TStringList;
     procedure DoProcessDirectives();
     procedure DoProcessImportedModuleDirectives(const AModule: TCPModuleNode);
+    // Individual directive handlers
+    procedure DoProcessTargetDirective(const ADir: TCPDirectiveNode; const AModule: TCPModuleNode);
+    procedure DoProcessSubsystemDirective(const ADir: TCPDirectiveNode);
+    procedure DoProcessOptimizeDirective(const ADir: TCPDirectiveNode);
+    procedure DoProcessModulePathDirective(const ADir: TCPDirectiveNode);
+    procedure DoProcessCopyDllDirective(const ADir: TCPDirectiveNode);
+    procedure DoProcessLibraryPathDirective(const ADir: TCPDirectiveNode);
+    procedure DoProcessAddLinkLibraryDirective(const ADir: TCPDirectiveNode);
+    procedure DoProcessMessageDirective(const ADir: TCPDirectiveNode);
+    procedure DoProcessExeIconDirective(const ADir: TCPDirectiveNode);
+    procedure DoProcessResFileDirective(const ADir: TCPDirectiveNode);
+    procedure DoProcessOutputPathDirective(const ADir: TCPDirectiveNode);
+    procedure DoProcessIncludePathDirective(const ADir: TCPDirectiveNode);
+    procedure DoProcessUnitTestModeDirective(const ADir: TCPDirectiveNode);
+    procedure DoProcessAddVerInfoDirective(const ADir: TCPDirectiveNode);
+    procedure DoProcessVerInfoDirective(const ADir: TCPDirectiveNode);
     procedure DoFirePreParseCallbacks();
     procedure DoFirePreBuildCallbacks();
     procedure DoSetupPlatformDefines();
@@ -312,94 +328,230 @@ begin
   end;
 end;
 
+{ TCPCompiler.DoProcessTargetDirective }
+procedure TCPCompiler.DoProcessTargetDirective(const ADir: TCPDirectiveNode;
+  const AModule: TCPModuleNode);
+begin
+  if AModule.ResolvedTargetTriple <> '' then
+    SetTarget(AModule.ResolvedTargetTriple);
+end;
+
+{ TCPCompiler.DoProcessSubsystemDirective }
+procedure TCPCompiler.DoProcessSubsystemDirective(const ADir: TCPDirectiveNode);
+var
+  LValue: string;
+begin
+  LValue := ADir.DirectiveValue.ToLower();
+  if LValue = 'console' then
+    SetSubsystem(stConsole)
+  else if LValue = 'gui' then
+    SetSubsystem(stGUI)
+  else
+    FErrors.Add(ADir.Location, esWarning, CP_ERR_CMP_001,
+      'Unknown @subsystem value ''%s''; expected console or gui',
+      [ADir.DirectiveValue]);
+end;
+
+{ TCPCompiler.DoProcessOptimizeDirective }
+procedure TCPCompiler.DoProcessOptimizeDirective(const ADir: TCPDirectiveNode);
+var
+  LValue: string;
+begin
+  LValue := ADir.DirectiveValue.ToLower();
+  if LValue = 'debug' then
+    SetOptimizeLevel(olDebug)
+  else if LValue = 'release-safe' then
+    SetOptimizeLevel(olReleaseSafe)
+  else if LValue = 'release-fast' then
+    SetOptimizeLevel(olReleaseFast)
+  else if LValue = 'release-small' then
+    SetOptimizeLevel(olReleaseSmall)
+  else
+    FErrors.Add(ADir.Location, esWarning, CP_ERR_CMP_001,
+      'Unknown @optimize value ''%s''; expected debug, release-safe, release-fast, or release-small',
+      [ADir.DirectiveValue]);
+end;
+
+{ TCPCompiler.DoProcessModulePathDirective }
+procedure TCPCompiler.DoProcessModulePathDirective(const ADir: TCPDirectiveNode);
+begin
+  AddModulePath(TUtils.ResolvePath(ADir.ResolvedValue));
+end;
+
+{ TCPCompiler.DoProcessCopyDllDirective }
+procedure TCPCompiler.DoProcessCopyDllDirective(const ADir: TCPDirectiveNode);
+begin
+  AddCopyDLL(TUtils.ResolvePath(ADir.ResolvedValue));
+end;
+
+{ TCPCompiler.DoProcessLibraryPathDirective }
+procedure TCPCompiler.DoProcessLibraryPathDirective(const ADir: TCPDirectiveNode);
+begin
+  AddLibraryPath(ADir.ResolvedValue);
+end;
+
+{ TCPCompiler.DoProcessAddLinkLibraryDirective }
+procedure TCPCompiler.DoProcessAddLinkLibraryDirective(const ADir: TCPDirectiveNode);
+begin
+  AddLibraryPath(TUtils.ResolvePath(ADir.ResolvedValue));
+end;
+
+{ TCPCompiler.DoProcessMessageDirective }
+procedure TCPCompiler.DoProcessMessageDirective(const ADir: TCPDirectiveNode);
+var
+  LValue: string;
+begin
+  LValue := ADir.ResolvedValue.ToLower();
+  if LValue = 'hint' then
+    FErrors.Add(ADir.Location, esHint, CP_ERR_CMP_001, '%s', [ADir.ResolvedValue2])
+  else if LValue = 'warn' then
+    FErrors.Add(ADir.Location, esWarning, CP_ERR_CMP_001, '%s', [ADir.ResolvedValue2])
+  else if LValue = 'error' then
+    FErrors.Add(ADir.Location, esError, CP_ERR_CMP_001, '%s', [ADir.ResolvedValue2])
+  else if LValue = 'fatal' then
+    FErrors.Add(ADir.Location, esFatal, CP_ERR_CMP_001, '%s', [ADir.ResolvedValue2])
+  else
+    FErrors.Add(ADir.Location, esWarning, CP_ERR_CMP_001,
+      'Unknown @message severity ''%s''; expected hint, warn, error, or fatal',
+      [ADir.DirectiveValue]);
+end;
+
+{ TCPCompiler.DoProcessExeIconDirective }
+procedure TCPCompiler.DoProcessExeIconDirective(const ADir: TCPDirectiveNode);
+begin
+  FZigBuild.SetExeIcon(TUtils.ResolvePath(ADir.ResolvedValue));
+end;
+
+{ TCPCompiler.DoProcessResFileDirective }
+procedure TCPCompiler.DoProcessResFileDirective(const ADir: TCPDirectiveNode);
+begin
+  // TODO: wire to ZigBuild when .res linking is implemented
+  FErrors.Add(ADir.Location, esWarning, CP_ERR_CMP_001,
+    '@resfile is not yet implemented');
+end;
+
+{ TCPCompiler.DoProcessOutputPathDirective }
+procedure TCPCompiler.DoProcessOutputPathDirective(const ADir: TCPDirectiveNode);
+begin
+  FZigBuild.SetOutputPath(TUtils.ResolvePath(ADir.ResolvedValue));
+end;
+
+{ TCPCompiler.DoProcessIncludePathDirective }
+procedure TCPCompiler.DoProcessIncludePathDirective(const ADir: TCPDirectiveNode);
+begin
+  FZigBuild.AddIncludePath(TUtils.ResolvePath(ADir.ResolvedValue));
+end;
+
+{ TCPCompiler.DoProcessUnitTestModeDirective }
+procedure TCPCompiler.DoProcessUnitTestModeDirective(const ADir: TCPDirectiveNode);
+var
+  LValue: string;
+begin
+  LValue := ADir.DirectiveValue.ToLower();
+  if LValue = 'on' then
+    FParser.SetDefine('UNITTESTMODE', '1')
+  else if LValue = 'off' then
+    FParser.Undefine('UNITTESTMODE')
+  else
+    FErrors.Add(ADir.Location, esWarning, CP_ERR_CMP_001,
+      'Unknown @unittestmode value ''%s''; expected on or off',
+      [ADir.DirectiveValue]);
+end;
+
+{ TCPCompiler.DoProcessAddVerInfoDirective }
+procedure TCPCompiler.DoProcessAddVerInfoDirective(const ADir: TCPDirectiveNode);
+var
+  LValue: string;
+begin
+  LValue := ADir.DirectiveValue.ToLower();
+  if LValue = 'on' then
+    FZigBuild.SetAddVersionInfo(True)
+  else if LValue = 'off' then
+    FZigBuild.SetAddVersionInfo(False)
+  else
+    FErrors.Add(ADir.Location, esWarning, CP_ERR_CMP_001,
+      'Unknown @addverinfo value ''%s''; expected on or off',
+      [ADir.DirectiveValue]);
+end;
+
+{ TCPCompiler.DoProcessVerInfoDirective }
+procedure TCPCompiler.DoProcessVerInfoDirective(const ADir: TCPDirectiveNode);
+var
+  LName: string;
+begin
+  LName := ADir.DirectiveName.ToLower();
+  if LName = 'vimajor' then
+    FZigBuild.SetVIMajor(StrToIntDef(ADir.DirectiveValue, 0))
+  else if LName = 'viminor' then
+    FZigBuild.SetVIMinor(StrToIntDef(ADir.DirectiveValue, 0))
+  else if LName = 'vipatch' then
+    FZigBuild.SetVIPatch(StrToIntDef(ADir.DirectiveValue, 0))
+  else if LName = 'viproductname' then
+    FZigBuild.SetVIProductName(ADir.ResolvedValue)
+  else if LName = 'videscription' then
+    FZigBuild.SetVIDescription(ADir.ResolvedValue)
+  else if LName = 'vifilename' then
+    FZigBuild.SetVIFilename(ADir.ResolvedValue)
+  else if LName = 'vicompanyname' then
+    FZigBuild.SetVICompanyName(ADir.ResolvedValue)
+  else if LName = 'vicopyright' then
+    FZigBuild.SetVICopyright(ADir.ResolvedValue);
+end;
+
 { TCPCompiler.DoProcessDirectives }
 procedure TCPCompiler.DoProcessDirectives();
 var
   LMainModule: TCPModuleNode;
   LDir: TCPDirectiveNode;
   LName: string;
-  LValue: string;
   I: Integer;
 begin
   if (FMasterAST = nil) or (FMasterAST.Modules.Count = 0) then
     Exit;
 
-  // Only the main module (index 0) provides build configuration
+  // Main module (index 0): all directives
   LMainModule := FMasterAST.Modules[0];
-
   for I := 0 to LMainModule.Directives.Count - 1 do
   begin
     LDir := LMainModule.Directives[I];
     LName := LDir.DirectiveName.ToLower();
-    LValue := LDir.DirectiveValue.ToLower();
 
     if LName = 'target' then
-    begin
-      // Target is resolved by semantics -- read from AST
-      if LMainModule.ResolvedTargetTriple <> '' then
-        SetTarget(LMainModule.ResolvedTargetTriple);
-    end
+      DoProcessTargetDirective(LDir, LMainModule)
     else if LName = 'subsystem' then
-    begin
-      if LValue = 'console' then
-        SetSubsystem(stConsole)
-      else if LValue = 'gui' then
-        SetSubsystem(stGUI)
-      else
-        FErrors.Add(LDir.Location, esWarning, CP_ERR_CMP_001,
-          'Unknown @subsystem value ''%s''; expected console or gui',
-          [LDir.DirectiveValue]);
-    end
+      DoProcessSubsystemDirective(LDir)
     else if LName = 'optimize' then
-    begin
-      if LValue = 'debug' then
-        SetOptimizeLevel(olDebug)
-      else if LValue = 'release-safe' then
-        SetOptimizeLevel(olReleaseSafe)
-      else if LValue = 'release-fast' then
-        SetOptimizeLevel(olReleaseFast)
-      else if LValue = 'release-small' then
-        SetOptimizeLevel(olReleaseSmall)
-      else
-        FErrors.Add(LDir.Location, esWarning, CP_ERR_CMP_001,
-          'Unknown @optimize value ''%s''; expected debug, release-safe, release-fast, or release-small',
-          [LDir.DirectiveValue]);
-    end
-    else if LName = 'librarypath' then
-    begin
-      AddLibraryPath(LDir.ResolvedValue);
-    end
-    else if LName = 'copydll' then
-    begin
-      AddCopyDLL(TUtils.ResolvePath(LDir.ResolvedValue));
-    end
-    else if LName = 'addlinklibrary' then
-    begin
-      AddLibraryPath(TUtils.ResolvePath(LDir.ResolvedValue));
-    end
-    else if LName = 'message' then
-    begin
-      LValue := LDir.ResolvedValue.ToLower();
-      if LValue = 'hint' then
-        FErrors.Add(LDir.Location, esHint, CP_ERR_CMP_001, '%s', [LDir.ResolvedValue2])
-      else if LValue = 'warn' then
-        FErrors.Add(LDir.Location, esWarning, CP_ERR_CMP_001, '%s', [LDir.ResolvedValue2])
-      else if LValue = 'error' then
-        FErrors.Add(LDir.Location, esError, CP_ERR_CMP_001, '%s', [LDir.ResolvedValue2])
-      else if LValue = 'fatal' then
-        FErrors.Add(LDir.Location, esFatal, CP_ERR_CMP_001, '%s', [LDir.ResolvedValue2])
-      else
-        FErrors.Add(LDir.Location, esWarning, CP_ERR_CMP_001,
-          'Unknown @message severity ''%s''; expected hint, warn, error, or fatal',
-          [LDir.DirectiveValue]);
-    end
+      DoProcessOptimizeDirective(LDir)
     else if LName = 'modulepath' then
-    begin
-      AddModulePath(TUtils.ResolvePath(LDir.ResolvedValue));
-    end;
+      DoProcessModulePathDirective(LDir)
+    else if LName = 'copydll' then
+      DoProcessCopyDllDirective(LDir)
+    else if LName = 'librarypath' then
+      DoProcessLibraryPathDirective(LDir)
+    else if LName = 'addlinklibrary' then
+      DoProcessAddLinkLibraryDirective(LDir)
+    else if LName = 'message' then
+      DoProcessMessageDirective(LDir)
+    else if LName = 'exeicon' then
+      DoProcessExeIconDirective(LDir)
+    else if LName = 'resfile' then
+      DoProcessResFileDirective(LDir)
+    else if LName = 'outputpath' then
+      DoProcessOutputPathDirective(LDir)
+    else if LName = 'includepath' then
+      DoProcessIncludePathDirective(LDir)
+    else if LName = 'unittestmode' then
+      DoProcessUnitTestModeDirective(LDir)
+    else if LName = 'addverinfo' then
+      DoProcessAddVerInfoDirective(LDir)
+    else if (LName = 'vimajor') or (LName = 'viminor') or (LName = 'vipatch')
+         or (LName = 'viproductname') or (LName = 'videscription')
+         or (LName = 'vifilename') or (LName = 'vicompanyname')
+         or (LName = 'vicopyright') then
+      DoProcessVerInfoDirective(LDir);
   end;
 
-  // Resource directives from imported modules (copydll, librarypath)
+  // Imported modules: resource and message directives only
   for I := 1 to FMasterAST.Modules.Count - 1 do
     DoProcessImportedModuleDirectives(FMasterAST.Modules[I]);
 end;
@@ -418,11 +570,15 @@ begin
     LName := LDir.DirectiveName.ToLower();
 
     if LName = 'copydll' then
-      AddCopyDLL(TUtils.ResolvePath(LDir.ResolvedValue))
-    else if LName = 'addlinklibrary' then
-      AddLibraryPath(TUtils.ResolvePath(LDir.ResolvedValue))
+      DoProcessCopyDllDirective(LDir)
     else if LName = 'librarypath' then
-      AddLibraryPath(LDir.ResolvedValue);
+      DoProcessLibraryPathDirective(LDir)
+    else if LName = 'addlinklibrary' then
+      DoProcessAddLinkLibraryDirective(LDir)
+    else if LName = 'includepath' then
+      DoProcessIncludePathDirective(LDir)
+    else if LName = 'message' then
+      DoProcessMessageDirective(LDir);
   end;
 end;
 
@@ -508,6 +664,10 @@ begin
     else
       SetSubsystem(stConsole);
   end;
+
+  LValue := GetKeyValue('outputpath');
+  if LValue <> '' then
+    FZigBuild.SetOutputPath(TUtils.ResolvePath(LValue));
 end;
 
 { TCPCompiler.DoFirePreBuildCallbacks }
@@ -642,6 +802,7 @@ begin
   FreeAndNil(FMasterAST);
   FMasterAST := TCPMasterAST.Create();
 
+  try
   // Normalize source file extension
   LSourceFile := TPath.ChangeExtension(ASourceFile, CP_SRC_EXT);
 
@@ -748,11 +909,18 @@ begin
     Exit;
 
   // Process directives from enriched AST (after semantics)
+  // Set default output path first -- @outputpath directive and CLI -o can override
+  FZigBuild.SetOutputPath(AOutputPath);
   Status('Processing directives...');
   DoProcessDirectives();
 
   // Apply CLI directive overrides from key-value store
   DoCLIDirectives();
+
+  if FErrors.HasErrors() then
+    Exit;
+
+//  PrintErrors();
 
   // Unit modules: validate only, no codegen or build
   if DoValidateUnitModule() then
@@ -762,7 +930,7 @@ begin
   DoSetBuildMode();
 
   // Phase 3: Code generation
-  LGeneratedPath := TPath.Combine(AOutputPath, 'generated');
+  LGeneratedPath := TPath.Combine(FZigBuild.GetOutputPath(), 'generated');
   TUtils.CreateDirInPath(LGeneratedPath);
 
   Status('Generating C++23...');
@@ -771,7 +939,6 @@ begin
     Exit;
 
   // Phase 4: Wire ZigBuild and compile
-  FZigBuild.SetOutputPath(AOutputPath);
   FZigBuild.SetProjectName(LProjectName);
   FZigBuild.ClearSourceFiles();
   FZigBuild.ClearIncludePaths();
@@ -792,7 +959,7 @@ begin
   // Default library path for exe builds: output/zig-out/bin (where DLLs are built)
   if FMasterAST.Modules[0].ModuleKind = mkExe then
     FZigBuild.AddLibraryPath(
-      TPath.Combine(TPath.Combine(AOutputPath, 'zig-out'), 'bin'));
+      TPath.Combine(TPath.Combine(FZigBuild.GetOutputPath(), 'zig-out'), 'bin'));
 
   // Validate auto-run before build
   if LAutoRun and (not DoValidateAutoRun()) then
@@ -800,6 +967,15 @@ begin
 
   // Build (and optionally run)
   FZigBuild.Process(LAutoRun);
+
+  except
+    on E: Exception do
+    begin
+      if not FErrors.HasErrors() then
+        FErrors.Add(esFatal, CP_ERR_CMP_001,
+          'Internal compiler error: %s', [E.Message]);
+    end;
+  end;
 end;
 
 function TCPCompiler.Run(): Boolean;

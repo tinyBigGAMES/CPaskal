@@ -18,7 +18,9 @@ program cpas;
 uses
   System.SysUtils,
   UCPAS in 'UCPAS.pas',
-  CPaskal.CLI in '..\..\src\CPaskal.CLI.pas';
+  CPaskal.CLI in '..\..\src\CPaskal.CLI.pas',
+  CPaskal.CImporter.Script in '..\..\src\CPaskal.CImporter.Script.pas',
+  CPaskal.CImporter in '..\..\src\CPaskal.CImporter.pas';
 
 begin
   RunCLI();

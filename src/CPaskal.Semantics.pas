@@ -1886,6 +1886,11 @@ end;
 
 function TCPSemantics.IsAssignableFrom(const ATarget: TCPASTNode;
   const ASource: TCPASTNode): Boolean;
+var
+  LTargetPtr: TCPPointerTypeNode;
+  LSourcePtr: TCPPointerTypeNode;
+  LTargetBase: TCPASTNode;
+  LSourceBase: TCPASTNode;
 begin
   Result := False;
   if (ATarget = nil) or (ASource = nil) then
@@ -1896,6 +1901,38 @@ begin
   begin
     Result := True;
     Exit;
+  end;
+
+  // Structural pointer comparison: pointer to X = pointer to X
+  // Different TCPPointerTypeNode instances may refer to the same target type
+  LTargetPtr := nil;
+  LSourcePtr := nil;
+  if ATarget is TCPPointerTypeNode then
+    LTargetPtr := TCPPointerTypeNode(ATarget)
+  else if (ATarget is TCPTypeDeclNode) and
+          (TCPTypeDeclNode(ATarget).TypeDef is TCPPointerTypeNode) then
+    LTargetPtr := TCPPointerTypeNode(TCPTypeDeclNode(ATarget).TypeDef);
+  if ASource is TCPPointerTypeNode then
+    LSourcePtr := TCPPointerTypeNode(ASource)
+  else if (ASource is TCPTypeDeclNode) and
+          (TCPTypeDeclNode(ASource).TypeDef is TCPPointerTypeNode) then
+    LSourcePtr := TCPPointerTypeNode(TCPTypeDeclNode(ASource).TypeDef);
+  if (LTargetPtr <> nil) and (LSourcePtr <> nil) then
+  begin
+    LTargetBase := GetResolvedTypeDecl(LTargetPtr.TargetType);
+    LSourceBase := GetResolvedTypeDecl(LSourcePtr.TargetType);
+    // Both untyped pointers
+    if (LTargetBase = nil) and (LSourceBase = nil) then
+    begin
+      Result := True;
+      Exit;
+    end;
+    // Both point to the same resolved type
+    if (LTargetBase <> nil) and (LSourceBase <> nil) and (LTargetBase = LSourceBase) then
+    begin
+      Result := True;
+      Exit;
+    end;
   end;
 
   // Nil assignable to any pointer

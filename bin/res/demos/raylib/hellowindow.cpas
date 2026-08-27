@@ -1,0 +1,34 @@
+/*******************************************************************************
+  CPaskal™ Programming Language
+
+  Copyright © 2026-present tinyBigGAMES™ LLC
+  All Rights Reserved.
+
+  https://cpaskal.org
+
+  See LICENSE for license information
+*******************************************************************************/
+
+module exe hellowindow;
+
+@modulepath "$P:res/libs/vendor/raylib";
+
+import 
+  raylib;
+
+begin
+  println("hello");
+  
+  raylib.InitWindow(800, 450, "CPaskal: [raylib] HelloWindow");
+  raylib.SetTargetFPS(60);
+
+  while not raylib.WindowShouldClose() do
+    raylib.BeginDrawing();
+      raylib.ClearBackground(raylib.RAYWHITE);
+      raylib.DrawText("Hello from CPaskal!", 280, 200, 20, raylib.DARKGREEN);
+    raylib.EndDrawing();
+ end;
+
+ raylib.CloseWindow();  
+  
+end.

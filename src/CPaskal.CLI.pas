@@ -373,6 +373,7 @@ var
   LTarget: string;
   LSubsystem: string;
   LOptLevel: string;
+  LCLIOutputPath: string;
 begin
   SetupCallbacks();
 
@@ -380,6 +381,7 @@ begin
   LTarget := FTarget;
   LSubsystem := FSubsystem;
   LOptLevel := FOptLevel;
+  LCLIOutputPath := FOutputPath;
   FCompiler.AddPreParseCallback(
     procedure(const ACompiler: TCPCompiler; const AUserData: Pointer)
     begin
@@ -389,6 +391,8 @@ begin
         ACompiler.SetKeyValue('subsystem', LSubsystem);
       if LOptLevel <> '' then
         ACompiler.SetKeyValue('optimize', LOptLevel);
+      if LCLIOutputPath <> '' then
+        ACompiler.SetKeyValue('outputpath', LCLIOutputPath);
     end);
 
   // Determine output path

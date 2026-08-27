@@ -710,74 +710,67 @@ begin
   // Prime conditional processing for the first token position
   DoProcessConditionals();
 
-  // Create module node
+  // Create module node -- try/finally ensures cleanup on any failure path
   LModule := TCPModuleNode.Create();
-  LModule.Location := Current().Location;
-  LModule.SourceFile := LNormalized;
+  try
+    LModule.Location := Current().Location;
+    LModule.SourceFile := LNormalized;
 
-  // module ModuleKind name;
-  Expect(tkModule);
-  LModule.ModuleKind := DoParseModuleKind();
+    // module ModuleKind name;
+    Expect(tkModule);
+    LModule.ModuleKind := DoParseModuleKind();
 
-  // Set up predefined defines now that module kind is known
-  DoSetupPredefinedDefines(LModule.ModuleKind);
+    // Set up predefined defines now that module kind is known
+    DoSetupPredefinedDefines(LModule.ModuleKind);
 
-  if Current().Kind <> tkIdentifier then
-  begin
-    FErrors.Add(Current().Location, esError, CP_ERR_PAR_008,
-      'Expected module name identifier');
+    if Current().Kind <> tkIdentifier then
+    begin
+      FErrors.Add(Current().Location, esError, CP_ERR_PAR_008,
+        'Expected module name identifier');
+      Exit;
+    end;
+    LModule.ModuleName := Consume().TokenText;
+
+    // Expect semicolon but advance without DoProcessConditionals so that
+    // any @ifdef block in the directive section is left for DoParseDirectives
+    if Current().Kind = tkSemicolon then
+      FLexer.NextToken()
+    else
+      FLexer.Expect(tkSemicolon);
+
+    // Directives, imports, declarations
+    DoParseDirectives(LModule);
+    DoParseImportClause(LModule);
+    DoParseDeclarations(LModule);
+
+    if FErrors.HasErrors() then
+      Exit;
+
+    // Optional initialize/finalize blocks
+    DoParseInitializeBlock(LModule);
+    DoParseFinalizeBlock(LModule);
+
+    if FErrors.HasErrors() then
+      Exit;
+
+    // Main body: begin...end.
+    DoParseMainBody(LModule);
+
+    if FErrors.HasErrors() then
+      Exit;
+
+    // Test blocks after end.
+    DoParseTestBlocks(LModule);
+
+    if FErrors.HasErrors() then
+      Exit;
+
+    // Success -- transfer ownership to caller
+    Result := LModule;
+    LModule := nil;
+  finally
     LModule.Free();
-    Exit;
   end;
-  LModule.ModuleName := Consume().TokenText;
-
-  // Expect semicolon but advance without DoProcessConditionals so that
-  // any @ifdef block in the directive section is left for DoParseDirectives
-  if Current().Kind = tkSemicolon then
-    FLexer.NextToken()
-  else
-    FLexer.Expect(tkSemicolon);
-
-  // Directives, imports, declarations
-  DoParseDirectives(LModule);
-  DoParseImportClause(LModule);
-  DoParseDeclarations(LModule);
-
-  if FErrors.HasErrors() then
-  begin
-    LModule.Free();
-    Exit;
-  end;
-
-  // Optional initialize/finalize blocks
-  DoParseInitializeBlock(LModule);
-  DoParseFinalizeBlock(LModule);
-
-  if FErrors.HasErrors() then
-  begin
-    LModule.Free();
-    Exit;
-  end;
-
-  // Main body: begin...end.
-  DoParseMainBody(LModule);
-
-  if FErrors.HasErrors() then
-  begin
-    LModule.Free();
-    Exit;
-  end;
-
-  // Test blocks after end.
-  DoParseTestBlocks(LModule);
-
-  if FErrors.HasErrors() then
-  begin
-    LModule.Free();
-    Exit;
-  end;
-
-  Result := LModule;
 end;
 
 function TCPParser.DoParseModuleKind(): TCPModuleKind;
@@ -2726,6 +2719,7 @@ begin
       begin
         FErrors.Add(Current().Location, esError, CP_ERR_PAR_008,
           'Expected member name after "."');
+        LDot.BaseExpr := nil;  // detach before free to prevent double-free of LResult
         LDot.Free();
         Break;
       end;

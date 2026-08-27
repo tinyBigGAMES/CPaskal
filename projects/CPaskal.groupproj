@@ -9,9 +9,6 @@
         <Projects Include="CPAS\cpas.dproj">
             <Dependencies/>
         </Projects>
-        <Projects Include="Testbed\Testbed.dproj">
-            <Dependencies/>
-        </Projects>
     </ItemGroup>
     <ProjectExtensions>
         <Borland.Personality>Default.Personality.12</Borland.Personality>
@@ -38,23 +35,14 @@
     <Target Name="cpas:Make">
         <MSBuild Projects="CPAS\cpas.dproj" Targets="Make"/>
     </Target>
-    <Target Name="Testbed">
-        <MSBuild Projects="Testbed\Testbed.dproj"/>
-    </Target>
-    <Target Name="Testbed:Clean">
-        <MSBuild Projects="Testbed\Testbed.dproj" Targets="Clean"/>
-    </Target>
-    <Target Name="Testbed:Make">
-        <MSBuild Projects="Testbed\Testbed.dproj" Targets="Make"/>
-    </Target>
     <Target Name="Build">
-        <CallTarget Targets="ImportLibs;cpas;Testbed"/>
+        <CallTarget Targets="ImportLibs;cpas"/>
     </Target>
     <Target Name="Clean">
-        <CallTarget Targets="ImportLibs:Clean;cpas:Clean;Testbed:Clean"/>
+        <CallTarget Targets="ImportLibs:Clean;cpas:Clean"/>
     </Target>
     <Target Name="Make">
-        <CallTarget Targets="ImportLibs:Make;cpas:Make;Testbed:Make"/>
+        <CallTarget Targets="ImportLibs:Make;cpas:Make"/>
     </Target>
     <Import Project="$(BDS)\Bin\CodeGear.Group.Targets" Condition="Exists('$(BDS)\Bin\CodeGear.Group.Targets')"/>
 </Project>

@@ -458,7 +458,14 @@ begin
   if ANode is TCPConstDeclNode then
     EmitConstDecl(TCPConstDeclNode(ANode))
   else if ANode is TCPForwardTypeDeclNode then
-    FOutput.EmitLine('struct ' + TCPForwardTypeDeclNode(ANode).DeclName + ';', otHeader)
+  begin
+    // Use 'union' if the resolved full type is an overlay, otherwise 'struct'
+    if (TCPForwardTypeDeclNode(ANode).ResolvedDecl is TCPTypeDeclNode) and
+       (TCPTypeDeclNode(TCPForwardTypeDeclNode(ANode).ResolvedDecl).TypeDef is TCPOverlayTypeNode) then
+      FOutput.EmitLine('union ' + TCPForwardTypeDeclNode(ANode).DeclName + ';', otHeader)
+    else
+      FOutput.EmitLine('struct ' + TCPForwardTypeDeclNode(ANode).DeclName + ';', otHeader);
+  end
   else if ANode is TCPTypeDeclNode then
     EmitTypeDecl(TCPTypeDeclNode(ANode))
   else if ANode is TCPVarDeclNode then
@@ -535,17 +542,24 @@ begin
   EmitExpr(TCPExprNode(ANode.ValueExpr));
   LValue := FOutput.ExprResult;
 
-  if ANode.IsPublic then
+  // std::string/std::wstring cannot be constexpr (heap allocation), use const instead
+  if (LType = 'std::string') or (LType = 'std::wstring') then
   begin
-    // Public: inline constexpr in header
-    FOutput.EmitLine('inline constexpr ' + LType + ' ' + ANode.DeclName +
-      ' = ' + LValue + ';', otHeader);
+    if ANode.IsPublic then
+      FOutput.EmitLine('inline const ' + LType + ' ' + ANode.DeclName +
+        ' = ' + LValue + ';', otHeader)
+    else
+      FOutput.EmitLine('const ' + LType + ' ' + ANode.DeclName +
+        ' = ' + LValue + ';', otSource);
   end
   else
   begin
-    // Private: constexpr in source
-    FOutput.EmitLine('constexpr ' + LType + ' ' + ANode.DeclName +
-      ' = ' + LValue + ';', otSource);
+    if ANode.IsPublic then
+      FOutput.EmitLine('inline constexpr ' + LType + ' ' + ANode.DeclName +
+        ' = ' + LValue + ';', otHeader)
+    else
+      FOutput.EmitLine('constexpr ' + LType + ' ' + ANode.DeclName +
+        ' = ' + LValue + ';', otSource);
   end;
 end;
 

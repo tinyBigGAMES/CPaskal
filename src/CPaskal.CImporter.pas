@@ -1,17 +1,18 @@
 ﻿{===============================================================================
-  Myra™ - Win64 Memory DLL Loader
+  CPaskal™ Programming Language
 
-  Copyright © 2025-present tinyBigGAMES™ LLC
+  Copyright © 2026-present tinyBigGAMES™ LLC
   All Rights Reserved.
+
+  https://cpaskal.org
 
   See LICENSE for license information
   ----------------------------------------------------------------------------
+  CPaskal.CImport - C Header to CPaskal Module Converter
 
-  Myra.CImport - C Header to Myra Module Converter
-
-  This unit converts C headers into Myra module source code. It uses tinycc
+  This unit converts C headers into CPaskal module source code. It uses tinycc
   for preprocessing (expanding macros, includes) then parses the
-  result to generate Myra declarations.
+  result to generate CPaskal declarations.
 
   Usage:
     LImporter := TMyrCImporter.Create();
@@ -3280,7 +3281,15 @@ begin
       Continue;
 
     if LDefine.IsInteger then
-      EmitFmt('%s: int32 = %d;', [SanitizeIdentifier(LDefine.DefineName), LDefine.IntValue])
+    begin
+      // Pick the narrowest type that fits the value
+      if (LDefine.IntValue >= 0) and (LDefine.IntValue <= 2147483647) then
+        EmitFmt('%s: int32 = %d;', [SanitizeIdentifier(LDefine.DefineName), LDefine.IntValue])
+      else if (LDefine.IntValue >= 0) and (LDefine.IntValue <= 4294967295) then
+        EmitFmt('%s: uint32 = %d;', [SanitizeIdentifier(LDefine.DefineName), LDefine.IntValue])
+      else
+        EmitFmt('%s: int64 = %d;', [SanitizeIdentifier(LDefine.DefineName), LDefine.IntValue]);
+    end
     else if LDefine.IsFloat then
       EmitFmt('%s: float64 = %s;', [SanitizeIdentifier(LDefine.DefineName), FloatToStr(LDefine.FloatValue)])
     else if LDefine.IsString then
@@ -4045,7 +4054,7 @@ begin
   LOutputFile := TPath.Combine(LOutputDir, FModuleName + '.' + CP_SRC_EXT).Replace('\', '/');
 
   // Header info
-  Status(COLOR_CYAN + 'CImporter' + COLOR_RESET + ' - C Header to Myrissa Module Converter', []);
+  Status(COLOR_CYAN + 'CImporter' + COLOR_RESET + ' - C Header to CPaskal Module Converter', []);
   Status(COLOR_WHITE + '  Header: ' + COLOR_RESET + '%s', [FHeader]);
   Status(COLOR_WHITE + '  Unit:   ' + COLOR_RESET + '%s', [FModuleName]);
   Status('', []);
