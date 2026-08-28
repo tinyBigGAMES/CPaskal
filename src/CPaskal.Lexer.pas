@@ -214,9 +214,9 @@ begin
   AddKeyword('cppend',       tkCppEnd,       tcKeyword);
   AddKeyword('cpplink',      tkCppLink,      tcKeyword);
   AddKeyword('cppstart',     tkCppStart,     tcKeyword);
-  AddKeyword('create',       tkCreate,       tcKeyword);
+  AddKeyword('new',       tkNew,       tcKeyword);
   AddKeyword('cstr',         tkCStr,         tcKeyword);
-  AddKeyword('destroy',      tkDestroy,      tcKeyword);
+  AddKeyword('dispose',      tkDispose,      tcKeyword);
   AddKeyword('div',          tkDiv,          tcKeyword);
   AddKeyword('do',           tkDo,           tcKeyword);
   AddKeyword('downto',       tkDownTo,       tcKeyword);

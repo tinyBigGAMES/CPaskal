@@ -375,11 +375,11 @@ begin
   println("{}", cstr(v_cat));
 
   // wstr conversion (returns non-null UTF-16 pointer)
-  var v_wptr: pointer = wstr(v_str);
+  var v_wptr: pointer to wchar = wstr(v_str);
   println("{}", v_wptr <> nil);
 
   // cstr returns raw C string pointer
-  var v_cptr: pointer = cstr(v_str);
+  var v_cptr: pointer to char = cstr(v_str);
   println("{}", v_cptr <> nil);
 
   // Phase 4: Control flow - if/then/else
@@ -1073,6 +1073,134 @@ begin
     println("external clause: {} / 4 passed", ext_pass);
     asserteq(ext_pass, 4, "external clause");
   @endif
+
+  // Phase 30: Set Operations
+  println("\n=== Phase 30: Set Operations ===");
+  var set_pass: int32;
+  set_pass := 0;
+
+  // Empty set
+  var s_empty: set;
+  s_empty := [];
+  set_pass := set_pass + 1;
+
+  // Single element
+  var s_one: set;
+  s_one := [5];
+  if 5 in s_one then
+    set_pass := set_pass + 1;
+  end;
+
+  // Multiple elements
+  var s_multi: set;
+  s_multi := [1, 3, 5, 7];
+  if (1 in s_multi) and (3 in s_multi) and (5 in s_multi) and (7 in s_multi) then
+    set_pass := set_pass + 1;
+  end;
+  if not (2 in s_multi) then
+    set_pass := set_pass + 1;
+  end;
+
+  // Range
+  var s_range: set;
+  s_range := [1..10];
+  if (1 in s_range) and (5 in s_range) and (10 in s_range) then
+    set_pass := set_pass + 1;
+  end;
+  if not (11 in s_range) then
+    set_pass := set_pass + 1;
+  end;
+
+  // Mixed elements and ranges
+  var s_mixed: set;
+  s_mixed := [1, 3..7, 10];
+  if (1 in s_mixed) and (5 in s_mixed) and (10 in s_mixed) and not (2 in s_mixed) then
+    set_pass := set_pass + 1;
+  end;
+
+  // Union (+)
+  var s_a: set;
+  var s_b: set;
+  s_a := [1, 2, 3];
+  s_b := [3, 4, 5];
+  var s_union: set;
+  s_union := s_a + s_b;
+  if (1 in s_union) and (3 in s_union) and (5 in s_union) then
+    set_pass := set_pass + 1;
+  end;
+
+  // Intersection (*)
+  var s_isect: set;
+  s_isect := s_a * s_b;
+  if (3 in s_isect) and not (1 in s_isect) and not (5 in s_isect) then
+    set_pass := set_pass + 1;
+  end;
+
+  // Difference (-)
+  var s_diff: set;
+  s_diff := s_a - s_b;
+  if (1 in s_diff) and (2 in s_diff) and not (3 in s_diff) then
+    set_pass := set_pass + 1;
+  end;
+
+  // Equality and inequality
+  var s_c: set;
+  var s_d: set;
+  s_c := [1, 2, 3];
+  s_d := [1, 2, 3];
+  if s_c = s_d then
+    set_pass := set_pass + 1;
+  end;
+  if s_c <> s_b then
+    set_pass := set_pass + 1;
+  end;
+
+  println("set operations: {} / 12 passed", set_pass);
+  asserteq(set_pass, 12, "set operations");
+
+  // Phase 31: New/Dispose (typed heap allocation)
+  println("\n=== Phase 31: New/Dispose ===");
+  var nd_pass: int32;
+  nd_pass := 0;
+
+  // Allocate a record on the heap
+  var hp: pointer to Point;
+  new(hp);
+  hp^.x := 42;
+  hp^.y := 99;
+  if hp^.x = 42 then
+    nd_pass := nd_pass + 1;
+  end;
+  if hp^.y = 99 then
+    nd_pass := nd_pass + 1;
+  end;
+
+  // Modify through pointer
+  hp^.x := hp^.x + 10;
+  if hp^.x = 52 then
+    nd_pass := nd_pass + 1;
+  end;
+
+  // Dispose sets pointer to nil
+  dispose(hp);
+  if hp = nil then
+    nd_pass := nd_pass + 1;
+  end;
+
+  // Allocate a simple int on the heap
+  var hi: pointer to int32;
+  new(hi);
+  hi^ := 777;
+  if hi^ = 777 then
+    nd_pass := nd_pass + 1;
+  end;
+  dispose(hi);
+  if hi = nil then
+    nd_pass := nd_pass + 1;
+  end;
+
+  println("new/dispose: {} / 6 passed", nd_pass);
+  asserteq(nd_pass, 6, "new/dispose");
 
   println("all compliance tests passed");
 end.

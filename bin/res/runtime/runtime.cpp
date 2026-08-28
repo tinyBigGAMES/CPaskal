@@ -319,12 +319,12 @@ std::string rt_utf8(const std::wstring& s) {
     return converter.to_bytes(s);
 }
 
-void* rt_wstr(const std::string& s) {
+char16_t* rt_wstr(const std::string& s) {
     if (s.empty()) {
         // Return a heap-allocated empty null-terminated char16_t buffer
         char16_t* buf = static_cast<char16_t*>(malloc(sizeof(char16_t)));
         if (buf) buf[0] = 0;
-        return static_cast<void*>(buf);
+        return buf;
     }
 
     // First pass: count UTF-16 code units needed
@@ -397,7 +397,7 @@ void* rt_wstr(const std::string& s) {
     }
     *out = 0; // null terminate
 
-    return static_cast<void*>(buf);
+    return buf;
 }
 
 /*******************************************************************************

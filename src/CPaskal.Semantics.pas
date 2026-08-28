@@ -93,6 +93,8 @@ type
     FCurrentModule: TCPModuleNode;
     FModuleScopes: TObjectDictionary<string, TCPScope>;
     FPrimitiveTypes: TObjectDictionary<TCPTokenKind, TCPTypeDeclNode>;
+    FPointerToChar: TCPPointerTypeNode;
+    FPointerToWChar: TCPPointerTypeNode;
     FLoopDepth: Integer;
     FCurrentRoutine: TCPRoutineDeclNode;
 
@@ -150,8 +152,8 @@ type
     procedure DoAnalyzeBreak(const ANode: TCPBreakNode);
     procedure DoAnalyzeContinue(const ANode: TCPContinueNode);
     procedure DoAnalyzeCppBlock(const ANode: TCPCppBlockNode);
-    procedure DoAnalyzeCreate(const ANode: TCPCreateNode);
-    procedure DoAnalyzeDestroy(const ANode: TCPDestroyNode);
+    procedure DoAnalyzeNew(const ANode: TCPNewNode);
+    procedure DoAnalyzeDispose(const ANode: TCPDisposeNode);
     procedure DoAnalyzeGetMem(const ANode: TCPGetMemNode);
     procedure DoAnalyzeFreeMem(const ANode: TCPFreeMemNode);
     procedure DoAnalyzeResizeMem(const ANode: TCPResizeMemNode);
@@ -323,10 +325,25 @@ begin
   FPrimitiveTypes := TObjectDictionary<TCPTokenKind, TCPTypeDeclNode>.Create([doOwnsValues]);
   FLoopDepth := 0;
   InitPrimitiveTypes();
+
+  // Synthetic pointer-to-char and pointer-to-wchar types for cstr/wstr intrinsics
+  FPointerToChar := TCPPointerTypeNode.Create();
+  FPointerToChar.TargetType := GetPrimitiveType(tkChar);
+  FPointerToChar.IsConstTarget := True;
+
+  FPointerToWChar := TCPPointerTypeNode.Create();
+  FPointerToWChar.TargetType := GetPrimitiveType(tkWChar);
+  FPointerToWChar.IsConstTarget := True;
 end;
 
 destructor TCPSemantics.Destroy();
 begin
+  // Nil out borrowed references before freeing
+  FPointerToChar.TargetType := nil;
+  FPointerToChar.Free();
+  FPointerToWChar.TargetType := nil;
+  FPointerToWChar.Free();
+
   FPrimitiveTypes.Free();
   FModuleScopes.Free();
 
@@ -1081,10 +1098,10 @@ begin
     DoAnalyzeBreak(TCPBreakNode(ANode))
   else if ANode is TCPContinueNode then
     DoAnalyzeContinue(TCPContinueNode(ANode))
-  else if ANode is TCPCreateNode then
-    DoAnalyzeCreate(TCPCreateNode(ANode))
-  else if ANode is TCPDestroyNode then
-    DoAnalyzeDestroy(TCPDestroyNode(ANode))
+  else if ANode is TCPNewNode then
+    DoAnalyzeNew(TCPNewNode(ANode))
+  else if ANode is TCPDisposeNode then
+    DoAnalyzeDispose(TCPDisposeNode(ANode))
   else if ANode is TCPGetMemNode then
     DoAnalyzeGetMem(TCPGetMemNode(ANode))
   else if ANode is TCPFreeMemNode then
@@ -1282,14 +1299,14 @@ begin
       [ANode.Target]);
 end;
 
-{ TCPSemantics.DoAnalyzeCreate }
-procedure TCPSemantics.DoAnalyzeCreate(const ANode: TCPCreateNode);
+{ TCPSemantics.DoAnalyzeNew }
+procedure TCPSemantics.DoAnalyzeNew(const ANode: TCPNewNode);
 begin
   if ANode.ArgExpr <> nil then
     DoAnalyzeExpr(TCPExprNode(ANode.ArgExpr));
 end;
 
-procedure TCPSemantics.DoAnalyzeDestroy(const ANode: TCPDestroyNode);
+procedure TCPSemantics.DoAnalyzeDispose(const ANode: TCPDisposeNode);
 begin
   if ANode.ArgExpr <> nil then
     DoAnalyzeExpr(TCPExprNode(ANode.ArgExpr));
@@ -1424,11 +1441,23 @@ begin
     boIn:
       ANode.ResolvedType := GetPrimitiveType(tkBoolean);
   else
-    // Arithmetic: promote types
-    ANode.ResolvedType := PromoteTypes(LLeft, LRight);
-    if ANode.ResolvedType = nil then
-      FErrors.Add(ANode.Location, esError, CP_ERR_SEM_003,
-        'Incompatible types for binary operator');
+    // Set arithmetic: +, -, * on set types
+    if (LLeft is TCPSetTypeNode) and (LRight is TCPSetTypeNode) then
+    begin
+      if ANode.Op in [boAdd, boSub, boMul] then
+        ANode.ResolvedType := LLeft
+      else
+        FErrors.Add(ANode.Location, esError, CP_ERR_SEM_003,
+          'Invalid operator for set types');
+    end
+    else
+    begin
+      // Arithmetic: promote types
+      ANode.ResolvedType := PromoteTypes(LLeft, LRight);
+      if ANode.ResolvedType = nil then
+        FErrors.Add(ANode.Location, esError, CP_ERR_SEM_003,
+          'Incompatible types for binary operator');
+    end;
   end;
 end;
 
@@ -1835,9 +1864,9 @@ begin
     ikUtf8:
       ANode.ResolvedType := GetPrimitiveType(tkString);
     ikWStr:
-      ANode.ResolvedType := GetPrimitiveType(tkPointer);
+      ANode.ResolvedType := FPointerToWChar;
     ikCStr:
-      ANode.ResolvedType := GetPrimitiveType(tkPointer);
+      ANode.ResolvedType := FPointerToChar;
   end;
 end;
 
@@ -2073,6 +2102,13 @@ begin
      (TCPTypeDeclNode(ATarget).TypeDef is TCPRoutineTypeNode) and
      (ASource is TCPTypeDeclNode) and
      (TCPTypeDeclNode(ASource).TypeDef is TCPRoutineTypeNode) then
+  begin
+    Result := True;
+    Exit;
+  end;
+
+  // Set types are structurally compatible
+  if (ATarget is TCPSetTypeNode) and (ASource is TCPSetTypeNode) then
   begin
     Result := True;
     Exit;

@@ -119,9 +119,12 @@ type
     procedure EmitCppBlock(const ANode: TCPCppBlockNode);
     procedure EmitCppExpr(const ANode: TCPCppExprNode);
 
+    // Debug info
+    procedure EmitLineDirective(const ANode: TCPASTNode);
+
     // Memory
-    procedure EmitCreate(const ANode: TCPCreateNode);
-    procedure EmitDestroy(const ANode: TCPDestroyNode);
+    procedure EmitNew(const ANode: TCPNewNode);
+    procedure EmitDispose(const ANode: TCPDisposeNode);
     procedure EmitGetMem(const ANode: TCPGetMemNode);
     procedure EmitFreeMem(const ANode: TCPFreeMemNode);
     procedure EmitResizeMem(const ANode: TCPResizeMemNode);
@@ -455,6 +458,15 @@ begin
   if ANode = nil then
     Exit;
 
+  // #line directive for source-level debug mapping
+  // Only emit for statement nodes (not declarations -- they map to headers)
+  if not (ANode is TCPConstDeclNode) and
+     not (ANode is TCPForwardTypeDeclNode) and
+     not (ANode is TCPTypeDeclNode) and
+     not (ANode is TCPVarDeclNode) and
+     not (ANode is TCPRoutineDeclNode) then
+    EmitLineDirective(ANode);
+
   if ANode is TCPConstDeclNode then
     EmitConstDecl(TCPConstDeclNode(ANode))
   else if ANode is TCPForwardTypeDeclNode then
@@ -502,10 +514,10 @@ begin
     EmitBreak()
   else if ANode is TCPContinueNode then
     EmitContinue()
-  else if ANode is TCPCreateNode then
-    EmitCreate(TCPCreateNode(ANode))
-  else if ANode is TCPDestroyNode then
-    EmitDestroy(TCPDestroyNode(ANode))
+  else if ANode is TCPNewNode then
+    EmitNew(TCPNewNode(ANode))
+  else if ANode is TCPDisposeNode then
+    EmitDispose(TCPDisposeNode(ANode))
   else if ANode is TCPGetMemNode then
     EmitGetMem(TCPGetMemNode(ANode))
   else if ANode is TCPFreeMemNode then
@@ -515,7 +527,12 @@ begin
   else if ANode is TCPSetLengthNode then
     EmitSetLength(TCPSetLengthNode(ANode))
   else if ANode is TCPCppBlockNode then
-    EmitCppBlock(TCPCppBlockNode(ANode));
+    EmitCppBlock(TCPCppBlockNode(ANode))
+  else if ANode is TCPDirectiveNode then
+  begin
+    // Statement-level directives: @breakpoint emits no code (handled by compiler).
+    // @message -- no codegen action needed.
+  end;
   // Forward decls and other non-emitting nodes silently skipped
 end;
 
@@ -1307,15 +1324,28 @@ begin
   end;
 end;
 
+// Debug info
+
+procedure TCPCodegen.EmitLineDirective(const ANode: TCPASTNode);
+begin
+  if ANode = nil then
+    Exit;
+  if ANode.Location.IsEmpty() then
+    Exit;
+
+  FOutput.EmitRaw('#line ' + IntToStr(ANode.Location.StartLine) +
+    ' "' + ANode.Location.Filename.Replace('\', '/') + '"' + sLineBreak);
+end;
+
 // Memory statements
 
-procedure TCPCodegen.EmitCreate(const ANode: TCPCreateNode);
+procedure TCPCodegen.EmitNew(const ANode: TCPNewNode);
 begin
   EmitExpr(TCPExprNode(ANode.ArgExpr));
   FOutput.EmitLine('rt_create(' + FOutput.ExprResult + ');', otSource);
 end;
 
-procedure TCPCodegen.EmitDestroy(const ANode: TCPDestroyNode);
+procedure TCPCodegen.EmitDispose(const ANode: TCPDisposeNode);
 begin
   EmitExpr(TCPExprNode(ANode.ArgExpr));
   FOutput.EmitLine('rt_destroy(' + FOutput.ExprResult + ');', otSource);

@@ -140,8 +140,8 @@ type
     function DoParseReturnStmt(): TCPReturnNode;
     function DoParseGuardStmt(): TCPGuardNode;
     function DoParseThrowStmt(): TCPASTNode;
-    function DoParseCreateStmt(): TCPCreateNode;
-    function DoParseDestroyStmt(): TCPDestroyNode;
+    function DoParseNewStmt(): TCPNewNode;
+    function DoParseDisposeStmt(): TCPDisposeNode;
     function DoParseGetMemStmt(): TCPGetMemNode;
     function DoParseFreeMemStmt(): TCPFreeMemNode;
     function DoParseResizeMemStmt(): TCPResizeMemNode;
@@ -326,7 +326,7 @@ begin
     (AKind = tkRepeat) or (AKind = tkMatch) or (AKind = tkReturn) or
     (AKind = tkGuard) or (AKind = tkThrow) or (AKind = tkThrowCode) or
     (AKind = tkBreak) or (AKind = tkContinue) or
-    (AKind = tkCreate) or (AKind = tkDestroy) or
+    (AKind = tkNew) or (AKind = tkDispose) or
     (AKind = tkGetMem) or (AKind = tkFreeMem) or
     (AKind = tkResizeMem) or (AKind = tkSetLength) or
     (AKind = tkPrint) or (AKind = tkPrintLn) or
@@ -1910,10 +1910,10 @@ begin
     Consume();
     OptionalSemicolon();
   end
-  else if Check(tkCreate) then
-    Result := DoParseCreateStmt()
-  else if Check(tkDestroy) then
-    Result := DoParseDestroyStmt()
+  else if Check(tkNew) then
+    Result := DoParseNewStmt()
+  else if Check(tkDispose) then
+    Result := DoParseDisposeStmt()
   else if Check(tkGetMem) then
     Result := DoParseGetMemStmt()
   else if Check(tkFreeMem) then
@@ -2271,9 +2271,9 @@ begin
   end;
 end;
 
-function TCPParser.DoParseCreateStmt(): TCPCreateNode;
+function TCPParser.DoParseNewStmt(): TCPNewNode;
 begin
-  Result := TCPCreateNode.Create();
+  Result := TCPNewNode.Create();
   Result.Location := Current().Location;
   Consume();
   Expect(tkLParen);
@@ -2282,9 +2282,9 @@ begin
   OptionalSemicolon();
 end;
 
-function TCPParser.DoParseDestroyStmt(): TCPDestroyNode;
+function TCPParser.DoParseDisposeStmt(): TCPDisposeNode;
 begin
-  Result := TCPDestroyNode.Create();
+  Result := TCPDisposeNode.Create();
   Result.Location := Current().Location;
   Consume();
   Expect(tkLParen);

@@ -82,8 +82,8 @@ type
   TCPThrowCodeNode = class;
   TCPCppBlockNode = class;
   TCPCppExprNode = class;
-  TCPCreateNode = class;
-  TCPDestroyNode = class;
+  TCPNewNode = class;
+  TCPDisposeNode = class;
   TCPGetMemNode = class;
   TCPFreeMemNode = class;
   TCPResizeMemNode = class;
@@ -778,8 +778,8 @@ type
     property ArgExpr: TCPExprNode read FArgExpr write FArgExpr;
   end;
 
-  { TCPCreateNode }
-  TCPCreateNode = class(TCPASTNode)
+  { TCPNewNode }
+  TCPNewNode = class(TCPASTNode)
   protected
     FArgExpr: TCPASTNode;
   public
@@ -787,8 +787,8 @@ type
     property ArgExpr: TCPASTNode read FArgExpr write FArgExpr;
   end;
 
-  { TCPDestroyNode }
-  TCPDestroyNode = class(TCPASTNode)
+  { TCPDisposeNode }
+  TCPDisposeNode = class(TCPASTNode)
   protected
     FArgExpr: TCPASTNode;
   public
@@ -1661,16 +1661,16 @@ begin
   inherited;
 end;
 
-{ TCPCreateNode }
-destructor TCPCreateNode.Destroy();
+{ TCPNewNode }
+destructor TCPNewNode.Destroy();
 begin
   FArgExpr.Free();
 
   inherited;
 end;
 
-{ TCPDestroyNode }
-destructor TCPDestroyNode.Destroy();
+{ TCPDisposeNode }
+destructor TCPDisposeNode.Destroy();
 begin
   FArgExpr.Free();
 

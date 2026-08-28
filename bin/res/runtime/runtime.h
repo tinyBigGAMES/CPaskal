@@ -142,9 +142,9 @@ std::string rt_utf8(const std::wstring& s);
  * Convert UTF-8 string to a heap-allocated UTF-16 (char16_t) buffer.
  * Caller receives ownership of the returned pointer.
  * @param s  UTF-8 encoded string
- * @return Heap-allocated char16_t buffer (null-terminated), cast to void*
+ * @return Heap-allocated char16_t buffer (null-terminated)
  */
-void* rt_wstr(const std::string& s);
+char16_t* rt_wstr(const std::string& s);
 
 /**
  * Return length of a container (.size()) or C-style array (element count).
