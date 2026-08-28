@@ -11,6 +11,17 @@
 
 module exe hellowindow;
 
+@addverinfo on;
+@vimajor 1;
+@viminor 0;
+@vipatch 0;
+@viproductname "HelloWindow Demo";
+@videscription "HelloWindow Demo";
+@vifilename "hellowindow.exe";
+@vicompanyname "tinyBigGAMES™ LLC";
+@vicopyright "Copyright © 2026 tinyBigGAMES LLC";
+@exeicon "$P:res/assets/icons/cpaskal.ico";
+
 @modulepath "$P:res/libs/vendor/raylib";
 
 import 

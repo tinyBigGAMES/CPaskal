@@ -166,6 +166,7 @@ type
     procedure DoAnalyzeIndexAccess(const ANode: TCPIndexAccessNode);
     procedure DoAnalyzeDeref(const ANode: TCPDerefNode);
     procedure DoAnalyzeCallExpr(const ANode: TCPCallExprNode);
+    procedure DoCoerceCallArgs(const ANode: TCPCallExprNode);
     procedure DoAnalyzeTypeCast(const ANode: TCPTypeCastExprNode);
     procedure DoAnalyzeIntrinsic(const ANode: TCPIntrinsicExprNode);
     procedure DoAnalyzeSetLiteral(const ANode: TCPSetLiteralExprNode);
@@ -394,12 +395,48 @@ end;
 procedure TCPSemantics.Analyze(const AMasterAST: TCPMasterAST);
 var
   I: Integer;
+  LAnalyzed: TDictionary<string, Boolean>;
+  LProgress: Boolean;
+  LModule: TCPModuleNode;
+  J: Integer;
+  LReady: Boolean;
 begin
   FMasterAST := AMasterAST;
 
-  // Process all modules in reverse order (dependencies before dependents)
-  for I := FMasterAST.ModuleCount() - 1 downto 0 do
-    DoAnalyzeModule(FMasterAST.GetModuleAt(I));
+  // Topological sort: process each module only after all its imports are analyzed.
+  // This handles any import ordering, diamond dependencies, and multi-level chains.
+  LAnalyzed := TDictionary<string, Boolean>.Create();
+  try
+    repeat
+      LProgress := False;
+      for I := 0 to FMasterAST.ModuleCount() - 1 do
+      begin
+        LModule := FMasterAST.GetModuleAt(I);
+        if LAnalyzed.ContainsKey(LModule.ModuleName) then
+          Continue;
+
+        // Check if all imports have been analyzed
+        LReady := True;
+        for J := 0 to LModule.Imports.Count - 1 do
+        begin
+          if not LAnalyzed.ContainsKey(LModule.Imports[J].ModuleName) then
+          begin
+            LReady := False;
+            Break;
+          end;
+        end;
+
+        if LReady then
+        begin
+          DoAnalyzeModule(LModule);
+          LAnalyzed.Add(LModule.ModuleName, True);
+          LProgress := True;
+        end;
+      end;
+    until (not LProgress) or (LAnalyzed.Count = FMasterAST.ModuleCount());
+  finally
+    LAnalyzed.Free();
+  end;
 end;
 
 procedure TCPSemantics.DoAnalyzeModule(const AModule: TCPModuleNode);
@@ -1706,6 +1743,62 @@ begin
     ANode.ResolvedType := GetResolvedTypeDecl(TCPRoutineTypeNode(TCPTypeDeclNode(
       TCPExprNode(ANode.Callee).ResolvedType).TypeDef).ReturnType);
   end;
+
+  // Auto-coerce string/wstring args to pointer to char/wchar
+  DoCoerceCallArgs(ANode);
+end;
+
+{ TCPSemantics.DoCoerceCallArgs }
+procedure TCPSemantics.DoCoerceCallArgs(const ANode: TCPCallExprNode);
+var
+  LRoutine: TCPRoutineDeclNode;
+  LI: Integer;
+  LParamType: TCPASTNode;
+  LArgType: TCPASTNode;
+  LOldArg: TCPASTNode;
+  LWrapper: TCPIntrinsicExprNode;
+  LPtr: TCPPointerTypeNode;
+  LTargetKind: TCPTokenKind;
+  LIntrinsicKind: TCPIntrinsicKind;
+begin
+  if not (ANode.ResolvedRoutine is TCPRoutineDeclNode) then
+    Exit;
+  LRoutine := TCPRoutineDeclNode(ANode.ResolvedRoutine);
+
+  for LI := 0 to ANode.Args.Count - 1 do
+  begin
+    if LI >= LRoutine.Params.Count then
+      Break;
+
+    LParamType := LRoutine.Params[LI].TypeExpr;
+    LArgType := TCPExprNode(ANode.Args[LI]).ResolvedType;
+
+    // Skip if param is not pointer to char/wchar
+    if not (LParamType is TCPPointerTypeNode) then
+      Continue;
+    LPtr := TCPPointerTypeNode(LParamType);
+    if not (LPtr.TargetType is TCPTypeRefNode) then
+      Continue;
+    LTargetKind := TCPTypeRefNode(LPtr.TargetType).TokenKind;
+
+    // string -> pointer to char: auto-insert cstr()
+    if (LTargetKind = tkChar) and (LArgType = GetPrimitiveType(tkString)) then
+      LIntrinsicKind := ikCStr
+    // wstring -> pointer to wchar: auto-insert cwstr()
+    else if (LTargetKind = tkWChar) and (LArgType = GetPrimitiveType(tkWString)) then
+      LIntrinsicKind := ikWStr
+    else
+      Continue;
+
+    // Extract old arg without freeing, wrap in intrinsic, insert back
+    LOldArg := ANode.Args[LI];
+    ANode.Args.Extract(LOldArg);
+    LWrapper := TCPIntrinsicExprNode.Create();
+    LWrapper.IntrinsicKind := LIntrinsicKind;
+    LWrapper.Args.Add(LOldArg);
+    LWrapper.ResolvedType := TCPExprNode(LOldArg).ResolvedType;
+    ANode.Args.Insert(LI, LWrapper);
+  end;
 end;
 
 procedure TCPSemantics.DoAnalyzeTypeCast(const ANode: TCPTypeCastExprNode);
@@ -1858,7 +1951,10 @@ begin
           'Type %s.%s is not public', [LRef.QualParts[0], LRef.QualParts[1]])
       else
         LRef.ResolvedDecl := LDecl;
-    end;
+    end
+    else
+      FErrors.Add(ANode.Location, esError, CP_ERR_SEM_001,
+        'Module scope not found: %s', [LRef.QualParts[0]]);
   end
   // Unqualified: single name lookup
   else if (Length(LRef.QualParts) = 1) and (LRef.QualParts[0] <> '') then

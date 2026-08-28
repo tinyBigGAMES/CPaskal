@@ -546,8 +546,8 @@ begin
   if (LType = 'std::string') or (LType = 'std::wstring') then
   begin
     if ANode.IsPublic then
-      FOutput.EmitLine('inline const ' + LType + ' ' + ANode.DeclName +
-        ' = ' + LValue + ';', otHeader)
+      FOutput.EmitLine('namespace ' + FCurrentModule.ModuleName + ' { inline const ' +
+        LType + ' ' + ANode.DeclName + ' = ' + LValue + '; }', otHeader)
     else
       FOutput.EmitLine('const ' + LType + ' ' + ANode.DeclName +
         ' = ' + LValue + ';', otSource);
@@ -555,8 +555,8 @@ begin
   else
   begin
     if ANode.IsPublic then
-      FOutput.EmitLine('inline constexpr ' + LType + ' ' + ANode.DeclName +
-        ' = ' + LValue + ';', otHeader)
+      FOutput.EmitLine('namespace ' + FCurrentModule.ModuleName + ' { inline constexpr ' +
+        LType + ' ' + ANode.DeclName + ' = ' + LValue + '; }', otHeader)
     else
       FOutput.EmitLine('constexpr ' + LType + ' ' + ANode.DeclName +
         ' = ' + LValue + ';', otSource);
@@ -1608,15 +1608,27 @@ end;
 
 procedure TCPCodegen.EmitIdentifier(const ANode: TCPIdentifierNode);
 begin
-  FOutput.ExprResult := ANode.IdentName;
+  // Public constants are namespaced in C++ headers to avoid cross-module collisions
+  if (ANode.ResolvedDecl is TCPConstDeclNode) and
+     TCPConstDeclNode(ANode.ResolvedDecl).IsPublic then
+    FOutput.ExprResult := FCurrentModule.ModuleName + '::' + ANode.IdentName
+  else
+    FOutput.ExprResult := ANode.IdentName;
 end;
 
 procedure TCPCodegen.EmitDotAccess(const ANode: TCPDotAccessNode);
 begin
   case ANode.AccessKind of
     dakModule:
-      // Module-qualified: just emit the member name (include handles visibility)
-      FOutput.ExprResult := ANode.MemberName;
+    begin
+      // Module-qualified: emit member name, with namespace for public constants
+      if (ANode.ResolvedDecl is TCPConstDeclNode) and
+         TCPConstDeclNode(ANode.ResolvedDecl).IsPublic then
+        FOutput.ExprResult := TCPIdentifierNode(ANode.BaseExpr).IdentName +
+          '::' + ANode.MemberName
+      else
+        FOutput.ExprResult := ANode.MemberName;
+    end;
     dakChoices:
     begin
       // Choices member: TypeName::MemberName (but C enum, not enum class, so just MemberName)
@@ -1708,7 +1720,10 @@ begin
     ikCStr:
     begin
       EmitExpr(TCPExprNode(ANode.Args[0]));
-      FOutput.ExprResult := 'const_cast<char*>(' + FOutput.ExprResult + '.c_str())';
+      // String literals are already const char* in C++, no conversion needed.
+      // Only std::string variables need .c_str() to get a const char*.
+      if not (ANode.Args[0] is TCPStringLiteralNode) then
+        FOutput.ExprResult := FOutput.ExprResult + '.c_str()';
     end;
     ikWStr:
     begin
@@ -1817,7 +1832,7 @@ begin
     else if TCPTypeRefNode(ANode).ResolvedDecl is TCPForwardTypeDeclNode then
       Result := TCPForwardTypeDeclNode(TCPTypeRefNode(ANode).ResolvedDecl).DeclName
     else
-      Result := 'auto'; // fallback
+      Result := 'auto'; // fallback - unresolved type
   end
   else if ANode is TCPArrayTypeNode then
   begin
@@ -1834,7 +1849,14 @@ begin
     if LPtr.TargetType = nil then
       Result := 'void*'
     else
-      Result := EmitTypeExpr(LPtr.TargetType) + '*';
+    begin
+      Result := EmitTypeExpr(LPtr.TargetType);
+      // pointer to char/wchar -> const char*/const char16_t* for C FFI compatibility
+      if (Result = 'char') or (Result = 'char16_t') then
+        Result := 'const ' + Result + '*'
+      else
+        Result := Result + '*';
+    end;
   end
   else if ANode is TCPSetTypeNode then
   begin

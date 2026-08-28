@@ -309,6 +309,7 @@ type
     FDefines: TList<TCDefineInfo>;
     FFunctions: TList<TCFunctionInfo>;
     FForwardDecls: TList<string>;
+    FLocalTypeNames: TDictionary<string, Boolean>;
     FInsertions: TList<TInsertionInfo>;
     FReplacements: TList<TReplacementInfo>;
     FCurrentSourceFile: string;
@@ -351,6 +352,8 @@ type
     procedure EmitLn(const AText: string = '');
     procedure EmitFmt(const AFormat: string; const AArgs: array of const);
     function MapCTypeToMyra(const ACType: string; const AIsPointer: Boolean; const APtrDepth: Integer; const AIsConstTarget: Boolean = False): string;
+    procedure BuildLocalTypeNames();
+    function QualifyType(const ATypeName: string): string;
     function ResolveTypedefAlias(const ATypeName: string): string;
     function ResolveConstantValue(const AName: string; out AValue: Int64): Boolean;
     function SanitizeIdentifier(const AName: string): string;
@@ -903,6 +906,7 @@ begin
   FDefines := TList<TCDefineInfo>.Create();
   FFunctions := TList<TCFunctionInfo>.Create();
   FForwardDecls := TList<string>.Create();
+  FLocalTypeNames := TDictionary<string, Boolean>.Create();
   FInsertions := TList<TInsertionInfo>.Create();
   FReplacements := TList<TReplacementInfo>.Create();
   FIncludePaths := TList<string>.Create();
@@ -1144,6 +1148,7 @@ begin
   FSourcePaths.Free();
   FReplacements.Free();
   FInsertions.Free();
+  FLocalTypeNames.Free();
   FForwardDecls.Free();
   FFunctions.Free();
   FDefines.Free();
@@ -2429,6 +2434,10 @@ begin
   else if LBaseType.StartsWith('union ') then LBaseType := Copy(LBaseType, 7, Length(LBaseType))
   else if LBaseType.StartsWith('enum ') then LBaseType := Copy(LBaseType, 6, Length(LBaseType));
 
+  // Qualify external types with module name (must be after all primitive
+  // mapping and prefix stripping, before pointer wrapping)
+  LBaseType := QualifyType(LBaseType);
+
   // Special case: char* -> pointer to char
   if (ACType = 'char') and (APtrDepth = 1) then
   begin
@@ -2461,6 +2470,66 @@ begin
   end
   else
     Result := LBaseType;
+end;
+
+{ TCImporter.BuildLocalTypeNames }
+procedure TCImporter.BuildLocalTypeNames();
+var
+  LI: Integer;
+  LTypedef: TCTypedefInfo;
+  LEnum: TCEnumInfo;
+begin
+  FLocalTypeNames.Clear();
+
+  // CPaskal primitives - these must never be qualified
+  FLocalTypeNames.AddOrSetValue('int8', True);
+  FLocalTypeNames.AddOrSetValue('int16', True);
+  FLocalTypeNames.AddOrSetValue('int32', True);
+  FLocalTypeNames.AddOrSetValue('int64', True);
+  FLocalTypeNames.AddOrSetValue('uint8', True);
+  FLocalTypeNames.AddOrSetValue('uint16', True);
+  FLocalTypeNames.AddOrSetValue('uint32', True);
+  FLocalTypeNames.AddOrSetValue('uint64', True);
+  FLocalTypeNames.AddOrSetValue('float32', True);
+  FLocalTypeNames.AddOrSetValue('float64', True);
+  FLocalTypeNames.AddOrSetValue('boolean', True);
+  FLocalTypeNames.AddOrSetValue('char', True);
+  FLocalTypeNames.AddOrSetValue('wchar', True);
+  FLocalTypeNames.AddOrSetValue('string', True);
+  FLocalTypeNames.AddOrSetValue('wstring', True);
+  FLocalTypeNames.AddOrSetValue('pointer', True);
+
+  // Locally-defined structs
+  for LI := 0 to FStructs.Count - 1 do
+    FLocalTypeNames.AddOrSetValue(FStructs[LI].StructName, True);
+
+  // Locally-defined enums
+  for LEnum in FEnums do
+    FLocalTypeNames.AddOrSetValue(LEnum.EnumName, True);
+
+  // Locally-defined typedefs (alias names)
+  for LTypedef in FTypedefs do
+    FLocalTypeNames.AddOrSetValue(LTypedef.AliasName, True);
+
+  // Local forward declarations (opaque types belonging to this module)
+  for LI := 0 to FForwardDecls.Count - 1 do
+    FLocalTypeNames.AddOrSetValue(FForwardDecls[LI], True);
+end;
+
+{ TCImporter.QualifyType }
+function TCImporter.QualifyType(const ATypeName: string): string;
+begin
+  // Only qualify if uses units exist and this type is not locally defined
+  if (FUsesUnits.Count > 0) and (not FLocalTypeNames.ContainsKey(ATypeName)) then
+  begin
+    if FUsesUnits.Count = 1 then
+      Result := FUsesUnits[0] + '.' + ATypeName
+    else
+      // Multiple uses units: cannot auto-determine. Leave unqualified.
+      Result := ATypeName;
+  end
+  else
+    Result := ATypeName;
 end;
 
 function TCImporter.ResolveTypedefAlias(const ATypeName: string): string;
@@ -2617,6 +2686,9 @@ var
 begin
   FOutput.Clear();
 
+  // Build local type set for external type qualification
+  BuildLocalTypeNames();
+
   // Myra module header
   EmitFmt('module unit %s;', [FModuleName]);
   EmitLn();
@@ -2668,6 +2740,22 @@ begin
     finally
       LTargets.Free();
     end;
+  end;
+
+  // Import statements from uses units
+  if FUsesUnits.Count > 0 then
+  begin
+    EmitLn('import');
+    Inc(FIndent);
+    for LI := 0 to FUsesUnits.Count - 1 do
+    begin
+      if LI < FUsesUnits.Count - 1 then
+        EmitFmt('%s,', [FUsesUnits[LI]])
+      else
+        EmitFmt('%s;', [FUsesUnits[LI]]);
+    end;
+    Dec(FIndent);
+    EmitLn();
   end;
 
   // Dispatch to mode-specific generation (only bmDynamic currently supported;
@@ -4029,6 +4117,7 @@ begin
   FDefines.Clear();
   FFunctions.Clear();
   FForwardDecls.Clear();
+  FLocalTypeNames.Clear();
   FCurrentSourceFile := '';
   FPos := 0;
   FIndent := 0;
@@ -4607,6 +4696,7 @@ begin
   FDefines.Clear();
   FFunctions.Clear();
   FForwardDecls.Clear();
+  FLocalTypeNames.Clear();
   FInsertions.Clear();
   FReplacements.Clear();
   FIncludePaths.Clear();
