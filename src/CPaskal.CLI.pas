@@ -420,7 +420,7 @@ begin
   if FOutputPath <> '' then
     LOutputPath := TUtils.ResolvePath(FOutputPath)
   else
-    LOutputPath := TUtils.ResolvePath('$P:output');
+    LOutputPath := TUtils.ResolvePath('output');
 
   // Compile
   FCompiler.Compile(FSourceFile, LOutputPath, FAutoRun);
