@@ -362,15 +362,15 @@ begin
   LValue := ADir.DirectiveValue.ToLower();
   if LValue = 'debug' then
     SetOptimizeLevel(olDebug)
-  else if LValue = 'release-safe' then
+  else if LValue = 'release_safe' then
     SetOptimizeLevel(olReleaseSafe)
-  else if LValue = 'release-fast' then
+  else if LValue = 'release_fast' then
     SetOptimizeLevel(olReleaseFast)
-  else if LValue = 'release-small' then
+  else if LValue = 'release_small' then
     SetOptimizeLevel(olReleaseSmall)
   else
     FErrors.Add(ADir.Location, esWarning, CP_ERR_CMP_001,
-      'Unknown @optimize value ''%s''; expected debug, release-safe, release-fast, or release-small',
+      'Unknown @optimize value ''%s''; expected debug, release_safe, release_fast, or release_small',
       [ADir.DirectiveValue]);
 end;
 
@@ -650,11 +650,11 @@ begin
   begin
     if LValue = 'debug' then
       SetOptimizeLevel(olDebug)
-    else if LValue = 'release-safe' then
+    else if LValue = 'release_safe' then
       SetOptimizeLevel(olReleaseSafe)
-    else if LValue = 'release-fast' then
+    else if LValue = 'release_fast' then
       SetOptimizeLevel(olReleaseFast)
-    else if LValue = 'release-small' then
+    else if LValue = 'release_small' then
       SetOptimizeLevel(olReleaseSmall);
   end;
 

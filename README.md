@@ -252,6 +252,16 @@ cppend
 var result: int32 = cpp("my_helper_function()");
 ```
 
+### CImporter
+
+Auto-generate CPaskal import units from C header files. CImporter is driven by `.cis` scripts that specify which headers to process, what binding mode to use, and how to handle library dependencies:
+
+```
+cpas cimport raylib.cis
+```
+
+Production bindings for raylib, SDL3, SDL3_mixer, and SDL3_image have all been generated this way.
+
 ## ♻️ Module Lifecycle
 
 All module kinds support optional `initialize` and `finalize` blocks:
@@ -315,11 +325,11 @@ Predefined symbols include `CPASKAL`, `TARGET_WIN64`, `TARGET_LINUX64`, `CPUX64`
 
 ## 📖 Documentation
 
-The full language reference, directive list, BNF grammar, toolchain guide, embedding API and how-to recipes are in a single document:
+The full language reference, directive list, BNF grammar, debugging guide, and common task recipes are in a single document:
 
 | Document | Description |
 |---|---|
-| **[CPaskal](docs/CPaskal.md)** | Complete tour: types, routines, records, objects, choices, sets, arrays, strings, control flow, exceptions, memory, pointers, overlays, variadics, modules, C++ interop, directives, intrinsics and test blocks. Plus the full BNF grammar, the `.mld` meta-language reference (how to hack the compiler), the toolchain (compiler CLI, DAP debugger, LSP), the embedding API, and task-oriented recipes. |
+| **[CPaskal](docs/CPaskal.md)** | Complete tour: types, routines, records, choices, sets, arrays, strings, control flow, exceptions, memory, pointers, overlays, variadics, modules, C++ interop, directives, intrinsics, test blocks, the full BNF grammar, debugging, code style conventions, and common task recipes. |
 
 ## 📦 Getting CPaskal
 
@@ -336,10 +346,10 @@ CPaskal/
   bin/
     cpas.exe              <- compiler
     res/
-      runtime/            <- Myra C++ runtime
+      runtime/            <- CPaskal C++ runtime
       libs/std/           <- standard library modules
       libs/vendor/        <- vendor bindings (raylib, SDL3)
-      tests/              <- test suite (.myra)
+      tests/              <- test suite (.cpas)
       zig/                <- bundled Zig/Clang toolchain
 ```
 
@@ -347,13 +357,16 @@ CPaskal/
 
 ```bash
 cpas <source> [options]
+cpas cimport <script> [options]
 ```
 
 | Flag | Description |
 |---|---|
 | `-r` | Compile and run |
+| `-d` | Build with debug info and launch debugger (Windows) |
 | `-t <target>` | Set target (`x86_64_windows`, `x86_64_linux`) |
-| `-opt <level>` | Optimization (`debug`, `release-safe`, `release-fast`, `release-small`) |
+| `-o <path>` | Set output directory |
+| `-opt <level>` | Optimization (`debug`, `release_safe`, `release_fast`, `release_small`) |
 | `-sub <type>` | Subsystem (`console`, `gui`) |
 
 ```bash

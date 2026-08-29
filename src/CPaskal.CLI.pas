@@ -141,15 +141,15 @@ begin
   TConsole.PrintLn('  ' + COLOR_CYAN + '-d, --debug            ' + COLOR_RESET +
     '  Build and debug the compiled binary');
   TConsole.PrintLn('  ' + COLOR_CYAN + '-t, --target    <target>' + COLOR_RESET +
-    '  Set compilation target (e.g. x86_64-windows-gnu)');
+    '  Set compilation target (e.g. x86_64_windows)');
   TConsole.PrintLn('  ' + COLOR_CYAN + '-o, --output    <path>  ' + COLOR_RESET +
     '  Set output directory');
   TConsole.PrintLn('  ' + COLOR_CYAN + '-sub, --subsystem <type>' + COLOR_RESET +
     '  Set subsystem: console (default), gui');
   TConsole.PrintLn('  ' + COLOR_CYAN + '-opt, --optimize <level>' + COLOR_RESET +
-    '  Set optimize level: debug (default), release-safe,');
+    '  Set optimize level: debug (default), release_safe,');
   TConsole.PrintLn('  ' + COLOR_CYAN + '                        ' + COLOR_RESET +
-    '  release-fast, release-small');
+    '  release_fast, release_small');
   TConsole.PrintLn('  ' + COLOR_CYAN + '-h, --help             ' + COLOR_RESET +
     '  Display this help message');
   TConsole.PrintLn('');
@@ -159,9 +159,9 @@ begin
   TConsole.PrintLn('  ' + COLOR_CYAN +
     LExeName + ' hello -r');
   TConsole.PrintLn('  ' + COLOR_CYAN +
-    LExeName + ' hello -r -t x86_64-linux');
+    LExeName + ' hello -r -t x86_64_linux');
   TConsole.PrintLn('  ' + COLOR_CYAN +
-    LExeName + ' hello -r -opt release-fast');
+    LExeName + ' hello -r -opt release_fast');
   TConsole.PrintLn('');
 end;
 
@@ -446,7 +446,7 @@ begin
   // Debugger is Win64 only
   if not SameText(FCompiler.GetTarget(), CP_DEFAULT_TARGET) then
   begin
-    TConsole.PrintLn(COLOR_RED + 'Error: Debugger requires x86_64-windows-gnu target.');
+    TConsole.PrintLn(COLOR_RED + 'Error: Debugger requires x86_64_windows target.');
     ExitCode := 1;
     Exit;
   end;
