@@ -37,6 +37,7 @@ type
     FCompiler: TCPCompiler;
     FSourceFile: string;
     FAutoRun: Boolean;
+    FDebug: Boolean;
     FTarget: string;
     FOutputPath: string;
     FSubsystem: string;
@@ -48,6 +49,7 @@ type
     procedure SetupCallbacks();
     function ParseArgs(): Boolean;
     procedure DoCompile();
+    procedure DoDebug();
     procedure DoCImport();
   public
     constructor Create();
@@ -64,7 +66,8 @@ uses
   StdApp.Utils,
   CPaskal.Common,
   CPaskal.ZigBuild,
-  CPaskal.CImporter.Script;
+  CPaskal.CImporter.Script,
+  CPaskal.Debug.REPL;
 
 { TCPCLI }
 
@@ -75,6 +78,7 @@ begin
   FCompiler := TCPCompiler.Create();
   FSourceFile := '';
   FAutoRun := False;
+  FDebug := False;
   FTarget := '';
   FOutputPath := '';
   FSubsystem := '';
@@ -134,6 +138,8 @@ begin
   TConsole.PrintLn(COLOR_BOLD + 'OPTIONS:');
   TConsole.PrintLn('  ' + COLOR_CYAN + '-r, --run              ' + COLOR_RESET +
     '  Run the compiled executable after building');
+  TConsole.PrintLn('  ' + COLOR_CYAN + '-d, --debug            ' + COLOR_RESET +
+    '  Build and debug the compiled binary');
   TConsole.PrintLn('  ' + COLOR_CYAN + '-t, --target    <target>' + COLOR_RESET +
     '  Set compilation target (e.g. x86_64-windows-gnu)');
   TConsole.PrintLn('  ' + COLOR_CYAN + '-o, --output    <path>  ' + COLOR_RESET +
@@ -207,6 +213,10 @@ begin
     else if (LFlag = '-r') or (LFlag = '--run') then
     begin
       FAutoRun := True;
+    end
+    else if (LFlag = '-d') or (LFlag = '--debug') then
+    begin
+      FDebug := True;
     end
     else if (LFlag = '-t') or (LFlag = '--target') then
     begin
@@ -348,11 +358,22 @@ begin
     Exit;
   end;
 
+  // Validate: -r and -d are mutually exclusive
+  if FAutoRun and FDebug then
+  begin
+    TConsole.PrintLn(COLOR_RED +
+      'Error: -r and -d cannot be used together');
+    TConsole.PrintLn('');
+    ExitCode := 2;
+    Result := False;
+    Exit;
+  end;
+
   // Source file validation (skip in cimport mode)
   if FSourceFile <> '' then
   begin
     // Normalize source file extension
-    FSourceFile := TPath.ChangeExtension(FSourceFile, CP_SRC_EXT);
+    FSourceFile := TUtils.ResolvePath(TPath.ChangeExtension(FSourceFile, CP_SRC_EXT));
 
     // Validate: source file must exist
     if not TFile.Exists(FSourceFile) then
@@ -416,6 +437,40 @@ begin
     ExitCode := FCompiler.GetLastExitCode();
 end;
 
+{ TCPCLI.DoDebug }
+procedure TCPCLI.DoDebug();
+var
+  LExePath: string;
+  LREPL: TCPDebugREPL;
+begin
+  // Debugger is Win64 only
+  if not SameText(FCompiler.GetTarget(), CP_DEFAULT_TARGET) then
+  begin
+    TConsole.PrintLn(COLOR_RED + 'Error: Debugger requires x86_64-windows-gnu target.');
+    ExitCode := 1;
+    Exit;
+  end;
+
+  LExePath := TPath.GetFullPath(
+    TPath.Combine(FCompiler.GetOutputPath(), 'zig-out\bin\' +
+      FCompiler.GetProjectName() + '.exe'));
+
+  if not FileExists(LExePath) then
+  begin
+    TConsole.PrintLn(COLOR_RED + 'Executable not found: ' + LExePath);
+    ExitCode := 1;
+    Exit;
+  end;
+
+  LREPL := TCPDebugREPL.Create();
+  try
+    LREPL.Run(LExePath);
+  finally
+    LREPL.Free();
+  end;
+end;
+
+{ TCPCLI.DoCImport }
 procedure TCPCLI.DoCImport();
 var
   LScript: TCPCImportScript;
@@ -462,7 +517,12 @@ begin
     if FCImportFile <> '' then
       DoCImport()
     else
+    begin
       DoCompile();
+
+      if FDebug and (not FCompiler.GetErrors().HasErrors()) then
+        DoDebug();
+    end;
   except
     on E: Exception do
     begin

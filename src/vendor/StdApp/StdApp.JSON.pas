@@ -132,8 +132,8 @@ type
     function EndArray(): TJSON;
 
     // --- Navigation ---
-    function Get(const APath: string): TJSON;
-    function Has(const APath: string): Boolean;
+    function Get(const APath: string; const ALiteral: Boolean = False): TJSON;
+    function Has(const APath: string; const ALiteral: Boolean = False): Boolean;
     function Count(): Integer;
     function Keys(): TArray<string>;
     function Items(): TArray<TJSON>;
@@ -821,10 +821,25 @@ begin
     FStack.Delete(FStack.Count - 1);
 end;
 
-function TJSON.Get(const APath: string): TJSON;
+function TJSON.Get(const APath: string; const ALiteral: Boolean): TJSON;
 var
   LResolved: System.JSON.TJSONValue;
+  LObj: System.JSON.TJSONObject;
 begin
+  if ALiteral then
+  begin
+    // Direct key lookup -- no dot splitting
+    if FIsNull or (FValue = nil) or not (FValue is System.JSON.TJSONObject) then
+      Exit(RegisterView(TJSON.CreateNull(Self)));
+    LObj := System.JSON.TJSONObject(FValue);
+    LResolved := LObj.GetValue(APath);
+    if LResolved = nil then
+      Result := RegisterView(TJSON.CreateNull(Self))
+    else
+      Result := RegisterView(TJSON.CreateView(Self, LResolved));
+    Exit;
+  end;
+
   LResolved := ResolvePath(APath);
   if LResolved = nil then
     Result := RegisterView(TJSON.CreateNull(Self))
@@ -832,8 +847,18 @@ begin
     Result := RegisterView(TJSON.CreateView(Self, LResolved));
 end;
 
-function TJSON.Has(const APath: string): Boolean;
+function TJSON.Has(const APath: string; const ALiteral: Boolean): Boolean;
+var
+  LObj: System.JSON.TJSONObject;
 begin
+  if ALiteral then
+  begin
+    if FIsNull or (FValue = nil) or not (FValue is System.JSON.TJSONObject) then
+      Exit(False);
+    LObj := System.JSON.TJSONObject(FValue);
+    Result := LObj.GetValue(APath) <> nil;
+    Exit;
+  end;
   Result := ResolvePath(APath) <> nil;
 end;
 

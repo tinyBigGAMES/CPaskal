@@ -1,15 +1,15 @@
 ﻿<Project xmlns="http://schemas.microsoft.com/developer/msbuild/2003">
     <PropertyGroup>
-        <ProjectGuid>{FB16A135-E23E-4A1F-BDAB-33C52520E531}</ProjectGuid>
+        <ProjectGuid>{928A4019-AF72-4B86-8F43-27F51675B2D5}</ProjectGuid>
         <ProjectVersion>20.3</ProjectVersion>
         <FrameworkType>None</FrameworkType>
         <Base>True</Base>
         <Config Condition="'$(Config)'==''">Release</Config>
         <Platform Condition="'$(Platform)'==''">Win64</Platform>
-        <ProjectName Condition="'$(ProjectName)'==''">cpas</ProjectName>
+        <ProjectName Condition="'$(ProjectName)'==''">cpaslsp</ProjectName>
         <TargetedPlatforms>2</TargetedPlatforms>
         <AppType>Console</AppType>
-        <MainSource>cpas.dpr</MainSource>
+        <MainSource>cpaslsp.dpr</MainSource>
     </PropertyGroup>
     <PropertyGroup Condition="'$(Config)'=='Base' or '$(Base)'!=''">
         <Base>true</Base>
@@ -61,7 +61,7 @@
         <DCC_F>false</DCC_F>
         <DCC_K>false</DCC_K>
         <DCC_Namespace>System;Xml;Data;Datasnap;Web;Soap;$(DCC_Namespace)</DCC_Namespace>
-        <SanitizedProjectName>cpas</SanitizedProjectName>
+        <SanitizedProjectName>cpaslsp</SanitizedProjectName>
     </PropertyGroup>
     <PropertyGroup Condition="'$(Base_Win32)'!=''">
         <DCC_UsePackage>vclwinx;DataSnapServer;fmx;emshosting;vclie;DbxCommonDriver;bindengine;IndyIPCommon;VCLRESTComponents;DBXMSSQLDriver;FireDACCommonODBC;emsclient;FireDACCommonDriver;appanalytics;IndyProtocols;vclx;Skia.Package.RTL;IndyIPClient;dbxcds;vcledge;bindcompvclwinx;emsedge;bindcompfmx;DBXFirebirdDriver;inetdb;FireDACSqliteDriver;DbxClientDriver;FireDACASADriver;soapmidas;vclactnband;fmxFireDAC;dbexpress;FireDACInfxDriver;DBXMySQLDriver;VclSmp;inet;DataSnapCommon;vcltouch;fmxase;DBXOdbcDriver;dbrtl;FireDACDBXDriver;Skia.Package.FMX;FireDACOracleDriver;fmxdae;FireDACMSAccDriver;CustomIPTransport;FireDACMSSQLDriver;DataSnapIndy10ServerTransport;DataSnapConnectors;vcldsnap;DBXInterBaseDriver;FireDACMongoDBDriver;IndySystem;FireDACTDataDriver;Skia.Package.VCL;vcldb;vclFireDAC;bindcomp;FireDACCommon;DataSnapServerMidas;FireDACODBCDriver;emsserverresource;inetstn;IndyCore;RESTBackendComponents;bindcompdbx;rtl;FireDACMySQLDriver;FireDACADSDriver;RESTComponents;DBXSqliteDriver;vcl;IndyIPServer;dsnapxml;dsnapcon;DataSnapClient;DataSnapProviderClient;adortl;DBXSybaseASEDriver;DBXDb2Driver;vclimg;DataSnapFireDAC;emsclientfiredac;FireDACPgDriver;FireDAC;FireDACDSDriver;inetdbxpress;xmlrtl;tethering;bindcompvcl;dsnap;CloudService;DBXSybaseASADriver;DBXOracleDriver;FireDACDb2Driver;DBXInformixDriver;fmxobj;bindcompvclsmp;DataSnapNativeClient;DatasnapConnectorsFreePascal;soaprtl;soapserver;FireDACIBDriver;$(DCC_UsePackage)</DCC_UsePackage>
@@ -80,10 +80,10 @@
         <UWP_DelphiLogo150>$(BDS)\bin\Artwork\Windows\UWP\delphi_UwpDefault_150.png</UWP_DelphiLogo150>
         <DCC_Namespace>Winapi;System.Win;Data.Win;Datasnap.Win;Web.Win;Soap.Win;Xml.Win;$(DCC_Namespace)</DCC_Namespace>
         <BT_BuildType>Debug</BT_BuildType>
-        <VerInfo_Keys>CompanyName=tinyBigGAMES™ LLC;FileDescription=CPaskal™ CLI;FileVersion=0.1.0.0;InternalName=CPaskal™ CLI;LegalCopyright=Copyright © 2026-present tinyBigGAMES™ LLC;LegalTrademarks=All Rights Reserved.;OriginalFilename=CPAS.exe;ProgramID=com.tinybiggames.cpas;ProductName=CPaskal™ CLI;ProductVersion=1.0.0.0;Comments=https://cpaskal.org</VerInfo_Keys>
+        <VerInfo_Keys>CompanyName=tinyBigGAMES™ LLC;FileDescription=CPaskal™ LSP;FileVersion=0.1.0.0;InternalName=CPaskal™ LSP;LegalCopyright=Copyright © 2026-present tinyBigGAMES™ LLC;LegalTrademarks=All Rights Reserved.;OriginalFilename=cpaslsp.exe;ProgramID=com.tinybiggames.cpaslsp;ProductName=CPaskal™ LSP;ProductVersion=1.0.0.0;Comments=https://cpaskal.org</VerInfo_Keys>
         <VerInfo_Locale>1033</VerInfo_Locale>
-        <DCC_ExeOutput>..\..\bin</DCC_ExeOutput>
         <DCC_UnitSearchPath>..\..\src;..\..\src\vendor\StdApp;$(DCC_UnitSearchPath)</DCC_UnitSearchPath>
+        <DCC_ExeOutput>..\..\bin</DCC_ExeOutput>
         <Manifest_File>$(BDS)\bin\default_app.manifest</Manifest_File>
         <AppDPIAwarenessMode>PerMonitorV2</AppDPIAwarenessMode>
         <VerInfo_IncludeVerInfo>true</VerInfo_IncludeVerInfo>
@@ -105,7 +105,6 @@
     </PropertyGroup>
     <PropertyGroup Condition="'$(Cfg_1_Win64)'!=''">
         <VerInfo_Locale>1033</VerInfo_Locale>
-        <AppDPIAwarenessMode>none</AppDPIAwarenessMode>
         <VerInfo_IncludeVerInfo>true</VerInfo_IncludeVerInfo>
         <VerInfo_MajorVer>0</VerInfo_MajorVer>
         <VerInfo_MinorVer>1</VerInfo_MinorVer>
@@ -126,27 +125,7 @@
         <DelphiCompile Include="$(MainSource)">
             <MainSource>MainSource</MainSource>
         </DelphiCompile>
-        <DCCReference Include="UCPAS.pas"/>
-        <DCCReference Include="..\..\src\CPaskal.AST.pas"/>
-        <DCCReference Include="..\..\src\CPaskal.CImporter.pas"/>
-        <DCCReference Include="..\..\src\CPaskal.CImporter.Script.pas"/>
-        <DCCReference Include="..\..\src\CPaskal.CLI.pas"/>
-        <DCCReference Include="..\..\src\CPaskal.Codegen.pas"/>
-        <DCCReference Include="..\..\src\CPaskal.Common.pas"/>
-        <DCCReference Include="..\..\src\CPaskal.Compiler.pas"/>
-        <DCCReference Include="..\..\src\CPaskal.Lexer.pas"/>
-        <DCCReference Include="..\..\src\CPaskal.Parser.pas"/>
-        <DCCReference Include="..\..\src\CPaskal.Semantics.pas"/>
-        <DCCReference Include="..\..\src\CPaskal.ZigBuild.pas"/>
-        <DCCReference Include="..\..\src\CPaskal.ZigBuild.Targets.pas"/>
-        <DCCReference Include="..\..\src\CPaskal.Debug.Client.pas"/>
-        <DCCReference Include="..\..\src\CPaskal.Debug.DAP.pas"/>
-        <DCCReference Include="..\..\src\CPaskal.Debug.PDB.pas"/>
-        <DCCReference Include="..\..\src\CPaskal.Debug.REPL.pas"/>
-        <DCCReference Include="..\..\src\CPaskal.Debug.Runtime.pas"/>
-        <DCCReference Include="..\..\src\CPaskal.Debug.Server.pas"/>
-        <DCCReference Include="..\..\src\CPaskal.Debug.Target.pas"/>
-        <DCCReference Include="..\..\src\StdApp.Resources.pas"/>
+        <DCCReference Include="UCPasLSP.pas"/>
         <DCCReference Include="..\..\src\CPaskal.LSP.pas"/>
         <BuildConfiguration Include="Base">
             <Key>Base</Key>
@@ -166,7 +145,7 @@
         <BorlandProject>
             <Delphi.Personality>
                 <Source>
-                    <Source Name="MainSource">cpas.dpr</Source>
+                    <Source Name="MainSource">cpaslsp.dpr</Source>
                 </Source>
                 <Excluded_Packages>
                     <Excluded_Packages Name="$(BDSBIN)\dcloffice2k290.bpl">Microsoft Office 2000 Sample Automation Server Wrapper Components</Excluded_Packages>
@@ -189,21 +168,21 @@
                         <Overwrite>true</Overwrite>
                     </Platform>
                 </DeployFile>
-                <DeployFile LocalName="..\..\bin\cpas.exe" Configuration="Debug" Class="ProjectOutput">
+                <DeployFile LocalName="..\..\bin\cpaslsp.exe" Configuration="Release" Class="ProjectOutput">
                     <Platform Name="Win64">
-                        <RemoteName>cpas.exe</RemoteName>
+                        <RemoteName>cpaslsp.exe</RemoteName>
                         <Overwrite>true</Overwrite>
                     </Platform>
                 </DeployFile>
-                <DeployFile LocalName="..\..\bin\cpas.exe" Configuration="Release" Class="ProjectOutput">
-                    <Platform Name="Win64">
-                        <RemoteName>cpas.exe</RemoteName>
-                        <Overwrite>true</Overwrite>
-                    </Platform>
-                </DeployFile>
-                <DeployFile LocalName="Win32\Debug\cpas.exe" Configuration="Debug" Class="ProjectOutput">
+                <DeployFile LocalName="Win32\Debug\cpaslsp.exe" Configuration="Debug" Class="ProjectOutput">
                     <Platform Name="Win32">
-                        <RemoteName>cpas.exe</RemoteName>
+                        <RemoteName>cpaslsp.exe</RemoteName>
+                        <Overwrite>true</Overwrite>
+                    </Platform>
+                </DeployFile>
+                <DeployFile LocalName="Win64\Debug\cpaslsp.exe" Configuration="Debug" Class="ProjectOutput">
+                    <Platform Name="Win64">
+                        <RemoteName>cpaslsp.exe</RemoteName>
                         <Overwrite>true</Overwrite>
                     </Platform>
                 </DeployFile>

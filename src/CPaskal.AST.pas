@@ -209,6 +209,7 @@ type
   public
     constructor Create(); virtual;
     destructor Destroy(); override;
+    procedure SetLocationEnd(const AEndLine: UInt64; const AEndColumn: UInt64);
     property Location: TSourceRange read FLocation write FLocation;
   end;
 
@@ -1110,6 +1111,14 @@ end;
 destructor TCPASTNode.Destroy();
 begin
   inherited;
+end;
+
+{ TCPASTNode.SetLocationEnd }
+procedure TCPASTNode.SetLocationEnd(const AEndLine: UInt64;
+  const AEndColumn: UInt64);
+begin
+  FLocation.EndLine := AEndLine;
+  FLocation.EndColumn := AEndColumn;
 end;
 
 { TCPModuleNode }

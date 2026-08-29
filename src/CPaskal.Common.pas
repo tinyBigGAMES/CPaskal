@@ -233,6 +233,9 @@ function cpTryParseTarget(const AValue: string; out ATarget: TCPTargetPlatform):
 { cpSanitizeIdentifier }
 function cpSanitizeIdentifier(const AName: string): string;
 
+{ cpLogStdErr }
+procedure cpLogStdErr(const AMsg: string);
+
 implementation
 
 { TCPToken }
@@ -302,6 +305,12 @@ begin
     ATarget := tpX86_64_Linux
   else
     Result := False;
+end;
+
+{ cpLogStdErr }
+procedure cpLogStdErr(const AMsg: string);
+begin
+  WriteLn(ErrOutput, AMsg);
 end;
 
 end.

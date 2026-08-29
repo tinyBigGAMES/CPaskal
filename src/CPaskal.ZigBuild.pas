@@ -2428,15 +2428,18 @@ begin
 
   LBreakpointFile := TUtils.ResolvePath(
     TPath.ChangeExtension(AExePath, CP_BREAKPOINT_EXT));
-  LExeDir := TPath.GetDirectoryName(AExePath);
+  LExeDir := TPath.GetFullPath(TPath.GetDirectoryName(AExePath));
 
   LConfig := TConfig.Create();
   try
     for LI := 0 to FBreakpoints.Count - 1 do
     begin
       LIndex := LConfig.AddTableEntry('breakpoints');
-      LRelativePath := ExtractRelativePath(LExeDir + PathDelim,
-        FBreakpoints[LI].FileName);
+      // ExtractRelativePath needs native backslash paths on Windows
+      LRelativePath := ExtractRelativePath(
+        IncludeTrailingPathDelimiter(LExeDir),
+        TPath.GetFullPath(FBreakpoints[LI].FileName.Replace('/', '\')));
+      // Normalize output to forward slashes
       LRelativePath := LRelativePath.Replace('\', '/');
       LConfig.SetTableString('breakpoints', LIndex, 'file', LRelativePath);
       LConfig.SetTableInteger('breakpoints', LIndex, 'line',

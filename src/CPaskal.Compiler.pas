@@ -111,6 +111,8 @@ type
     procedure DoCLIDirectives();
     function DoValidateUnitModule(): Boolean;
     procedure DoCollectExternalLibs();
+    procedure DoCollectBreakpoints();
+    procedure DoCollectBreakpointsInStmtList(const AList: TObjectList<TCPASTNode>);
     procedure DoSetBuildMode();
     function DoValidateAutoRun(): Boolean;
   public
@@ -722,6 +724,92 @@ begin
   end;
 end;
 
+{ TCPCompiler.DoCollectBreakpointsInStmtList }
+procedure TCPCompiler.DoCollectBreakpointsInStmtList(const AList: TObjectList<TCPASTNode>);
+var
+  LI: Integer;
+  LJ: Integer;
+  LNode: TCPASTNode;
+begin
+  if AList = nil then
+    Exit;
+
+  for LI := 0 to AList.Count - 1 do
+  begin
+    LNode := AList[LI];
+    if LNode = nil then
+      Continue;
+
+    // Check if this is a @breakpoint directive
+    if (LNode is TCPDirectiveNode) and
+       (TCPDirectiveNode(LNode).DirectiveName = 'breakpoint') then
+    begin
+      // Register at line + 1 so the debugger breaks on the next source line
+      FZigBuild.AddBreakpoint(
+        TUtils.ResolvePath(LNode.Location.Filename),
+        LNode.Location.StartLine + 1);
+    end;
+
+    // Recurse into control flow bodies
+    if LNode is TCPIfNode then
+    begin
+      DoCollectBreakpointsInStmtList(TCPIfNode(LNode).ThenBody);
+      DoCollectBreakpointsInStmtList(TCPIfNode(LNode).ElseBody);
+    end
+    else if LNode is TCPWhileNode then
+      DoCollectBreakpointsInStmtList(TCPWhileNode(LNode).Body)
+    else if LNode is TCPForNode then
+      DoCollectBreakpointsInStmtList(TCPForNode(LNode).Body)
+    else if LNode is TCPRepeatNode then
+      DoCollectBreakpointsInStmtList(TCPRepeatNode(LNode).Body)
+    else if LNode is TCPGuardNode then
+    begin
+      DoCollectBreakpointsInStmtList(TCPGuardNode(LNode).GuardBody);
+      DoCollectBreakpointsInStmtList(TCPGuardNode(LNode).ExceptBody);
+      DoCollectBreakpointsInStmtList(TCPGuardNode(LNode).FinallyBody);
+    end
+    else if LNode is TCPMatchNode then
+    begin
+      for LJ := 0 to TCPMatchNode(LNode).Arms.Count - 1 do
+        DoCollectBreakpointsInStmtList(TCPMatchNode(LNode).Arms[LJ].Body);
+      DoCollectBreakpointsInStmtList(TCPMatchNode(LNode).ElseBody);
+    end;
+  end;
+end;
+
+{ TCPCompiler.DoCollectBreakpoints }
+procedure TCPCompiler.DoCollectBreakpoints();
+var
+  LModIdx: Integer;
+  LDeclIdx: Integer;
+  LTestIdx: Integer;
+  LModule: TCPModuleNode;
+  LDecl: TCPASTNode;
+begin
+  for LModIdx := 0 to FMasterAST.Modules.Count - 1 do
+  begin
+    LModule := FMasterAST.Modules[LModIdx];
+
+    // Walk routine bodies in declarations
+    for LDeclIdx := 0 to LModule.Declarations.Count - 1 do
+    begin
+      LDecl := LModule.Declarations[LDeclIdx];
+      if (LDecl is TCPRoutineDeclNode) and
+         (TCPRoutineDeclNode(LDecl).Body <> nil) then
+        DoCollectBreakpointsInStmtList(TCPRoutineDeclNode(LDecl).Body);
+    end;
+
+    // Walk init, final, and main bodies
+    DoCollectBreakpointsInStmtList(LModule.InitBody);
+    DoCollectBreakpointsInStmtList(LModule.FinalBody);
+    DoCollectBreakpointsInStmtList(LModule.MainBody);
+
+    // Walk test blocks
+    for LTestIdx := 0 to LModule.TestBlocks.Count - 1 do
+      DoCollectBreakpointsInStmtList(LModule.TestBlocks[LTestIdx].Body);
+  end;
+end;
+
 { TCPCompiler.DoSetBuildMode }
 procedure TCPCompiler.DoSetBuildMode();
 var
@@ -792,6 +880,7 @@ var
   LSourceFile: string;
   LSourceDir: string;
   LAutoRun: Boolean;
+  LLibPath: string;
   LModule: TCPModuleNode;
   LPendingName: string;
   LPendingFile: string;
@@ -804,7 +893,7 @@ begin
 
   try
   // Normalize source file extension
-  LSourceFile := TPath.ChangeExtension(ASourceFile, CP_SRC_EXT);
+  LSourceFile := {TUtils.ResolvePath(}TPath.ChangeExtension(ASourceFile, CP_SRC_EXT){)};
 
   if not TFile.Exists(LSourceFile) then
   begin
@@ -938,6 +1027,9 @@ begin
   if FErrors.HasErrors() then
     Exit;
 
+  // Collect breakpoints from AST into ZigBuild
+  DoCollectBreakpoints();
+
   // Phase 4: Wire ZigBuild and compile
   FZigBuild.SetProjectName(LProjectName);
   FZigBuild.ClearSourceFiles();
@@ -958,8 +1050,11 @@ begin
 
   // Default library path for exe builds: output/zig-out/bin (where DLLs are built)
   if FMasterAST.Modules[0].ModuleKind = mkExe then
-    FZigBuild.AddLibraryPath(
-      TPath.Combine(TPath.Combine(FZigBuild.GetOutputPath(), 'zig-out'), 'bin'));
+  begin
+    LLibPath := TPath.Combine(TPath.Combine(FZigBuild.GetOutputPath(), 'zig-out'), 'bin');
+    if TDirectory.Exists(LLibPath) then
+      FZigBuild.AddLibraryPath(LLibPath);
+  end;
 
   // Validate auto-run before build
   if LAutoRun and (not DoValidateAutoRun()) then

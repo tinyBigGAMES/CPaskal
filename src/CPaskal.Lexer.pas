@@ -125,7 +125,9 @@ type
     function IsOperator(const AKind: TCPTokenKind): Boolean;
     function GetCppType(const AKind: TCPTokenKind): string;
     function GetCategory(const AKind: TCPTokenKind): TCPTokenCategory;
+    function GetRegisteredWords(const ACategory: TCPTokenCategory): TArray<string>;
     function TokenCount(): UInt64;
+    function GetTokens(): TList<TCPToken>;
 
     // Properties
     property SourceText: string read FSource;
@@ -417,6 +419,8 @@ begin
   Result.Filename := FFilename;
   Result.StartLine := AStartLine;
   Result.StartColumn := AStartCol;
+  Result.EndLine := FLine;
+  Result.EndColumn := FCol - 1;
 end;
 
 // -- Trivia and comment scanning --------------------------------------------
@@ -1392,9 +1396,37 @@ begin
     Result := tcSpecial;
 end;
 
+{ TCPLexer.GetRegisteredWords }
+function TCPLexer.GetRegisteredWords(
+  const ACategory: TCPTokenCategory): TArray<string>;
+var
+  LPair: TPair<string, TCPTokenKind>;
+  LCat: TCPTokenCategory;
+  LList: TList<string>;
+begin
+  LList := TList<string>.Create();
+  try
+    for LPair in FKeywords do
+    begin
+      if FCategories.TryGetValue(LPair.Value, LCat) and (LCat = ACategory) then
+        LList.Add(LPair.Key);
+    end;
+    LList.Sort();
+    Result := LList.ToArray();
+  finally
+    LList.Free();
+  end;
+end;
+
 function TCPLexer.TokenCount(): UInt64;
 begin
   Result := FTokens.Count;
+end;
+
+{ TCPLexer.GetTokens }
+function TCPLexer.GetTokens(): TList<TCPToken>;
+begin
+  Result := FTokens;
 end;
 
 function TCPLexer.ToSource(): string;

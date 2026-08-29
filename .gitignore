@@ -101,3 +101,5 @@ bin/res/tests/probe2.cpas
 /projects/ImportLibs
 /projects/Testbed
 bin/debug_dir.txt
+cpas.txt
+bin/output_test.txt

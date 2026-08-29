@@ -3,11 +3,14 @@
         <ProjectGuid>{9A2B5F2D-80BE-48D9-ACCD-6A57FFBC5EEE}</ProjectGuid>
     </PropertyGroup>
     <ItemGroup>
-        <Projects Include="ImportLibs\ImportLibs.dproj">
+        <Projects Include="testbed\testbed.dproj">
+            <Dependencies/>
+        </Projects>
+        <Projects Include="CPASLSP\cpaslsp.dproj">
             <Dependencies/>
         </Projects>
         <Projects Include="CPAS\cpas.dproj">
-            <Dependencies/>
+            <Dependencies>testbed\testbed.dproj;CPASLSP\cpaslsp.dproj</Dependencies>
         </Projects>
     </ItemGroup>
     <ProjectExtensions>
@@ -17,32 +20,41 @@
             <Default.Personality/>
         </BorlandProject>
     </ProjectExtensions>
-    <Target Name="ImportLibs">
-        <MSBuild Projects="ImportLibs\ImportLibs.dproj"/>
+    <Target Name="testbed">
+        <MSBuild Projects="testbed\testbed.dproj"/>
     </Target>
-    <Target Name="ImportLibs:Clean">
-        <MSBuild Projects="ImportLibs\ImportLibs.dproj" Targets="Clean"/>
+    <Target Name="testbed:Clean">
+        <MSBuild Projects="testbed\testbed.dproj" Targets="Clean"/>
     </Target>
-    <Target Name="ImportLibs:Make">
-        <MSBuild Projects="ImportLibs\ImportLibs.dproj" Targets="Make"/>
+    <Target Name="testbed:Make">
+        <MSBuild Projects="testbed\testbed.dproj" Targets="Make"/>
     </Target>
-    <Target Name="cpas">
+    <Target Name="cpaslsp">
+        <MSBuild Projects="CPASLSP\cpaslsp.dproj"/>
+    </Target>
+    <Target Name="cpaslsp:Clean">
+        <MSBuild Projects="CPASLSP\cpaslsp.dproj" Targets="Clean"/>
+    </Target>
+    <Target Name="cpaslsp:Make">
+        <MSBuild Projects="CPASLSP\cpaslsp.dproj" Targets="Make"/>
+    </Target>
+    <Target Name="cpas" DependsOnTargets="testbed;cpaslsp">
         <MSBuild Projects="CPAS\cpas.dproj"/>
     </Target>
-    <Target Name="cpas:Clean">
+    <Target Name="cpas:Clean" DependsOnTargets="testbed:Clean;cpaslsp:Clean">
         <MSBuild Projects="CPAS\cpas.dproj" Targets="Clean"/>
     </Target>
-    <Target Name="cpas:Make">
+    <Target Name="cpas:Make" DependsOnTargets="testbed:Make;cpaslsp:Make">
         <MSBuild Projects="CPAS\cpas.dproj" Targets="Make"/>
     </Target>
     <Target Name="Build">
-        <CallTarget Targets="ImportLibs;cpas"/>
+        <CallTarget Targets="testbed;cpaslsp;cpas"/>
     </Target>
     <Target Name="Clean">
-        <CallTarget Targets="ImportLibs:Clean;cpas:Clean"/>
+        <CallTarget Targets="testbed:Clean;cpaslsp:Clean;cpas:Clean"/>
     </Target>
     <Target Name="Make">
-        <CallTarget Targets="ImportLibs:Make;cpas:Make"/>
+        <CallTarget Targets="testbed:Make;cpaslsp:Make;cpas:Make"/>
     </Target>
     <Import Project="$(BDS)\Bin\CodeGear.Group.Targets" Condition="Exists('$(BDS)\Bin\CodeGear.Group.Targets')"/>
 </Project>

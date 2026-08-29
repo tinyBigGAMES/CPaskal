@@ -5,7 +5,7 @@ module exe bnf_compliance;
 //@target x86_64_windows;
 
 // Phase 23: Module features -- import
-import myutils;
+import bnf_unit_compliance;
 
 const
   // Integer constants (typed and untyped)
@@ -257,8 +257,8 @@ begin
 
   // Phase 23b: Actually use imported symbols (full module qualification)
   println("\n=== Phase 23b: Import Usage ===");
-  println("myutils.UTIL_VERSION = {}", myutils.UTIL_VERSION);
-  println("myutils.util_add(3, 4) = {}", myutils.util_add(3, 4));
+  println("bnf_unit_compliance.UNIT_VERSION = {}", bnf_unit_compliance.UNIT_VERSION);
+  println("bnf_unit_compliance.unit_add(3, 4) = {}", bnf_unit_compliance.unit_add(3, 4));
 
   println("\n=== Phase 1: Constants ===");
 

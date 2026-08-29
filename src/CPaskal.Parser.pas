@@ -66,6 +66,7 @@ type
   private
     FLexer: TCPLexer;
     FMasterAST: TCPMasterAST;
+    FLastConsumedLoc: TSourceRange;
 
     // Conditional compilation
     FDefines: TDictionary<string, string>;
@@ -167,6 +168,8 @@ type
     destructor Destroy(); override;
 
     function ParseModule(const AFilename: string; const AMasterAST: TCPMasterAST): TCPModuleNode;
+    function ParseModuleFromString(const ASource: string; const AFilename: string;
+      const AMasterAST: TCPMasterAST): TCPModuleNode;
     procedure SetErrors(const AErrors: TErrors); override;
     procedure SetStatusCallback(const ACallback: TStatusCallback; const AUserData: Pointer = nil); override;
 
@@ -230,6 +233,7 @@ end;
 function TCPParser.Consume(): TCPToken;
 begin
   Result := FLexer.CurrentToken();
+  FLastConsumedLoc := Result.Location;
   FLexer.NextToken();
   DoProcessConditionals();
 end;
@@ -239,6 +243,7 @@ begin
   Result := Current().Kind = AKind;
   if Result then
   begin
+    FLastConsumedLoc := Current().Location;
     FLexer.NextToken();
     DoProcessConditionals();
   end;
@@ -249,6 +254,7 @@ begin
   Result := Current();
   if Result.Kind = AKind then
   begin
+    FLastConsumedLoc := Result.Location;
     FLexer.NextToken();
     DoProcessConditionals();
   end
@@ -765,6 +771,91 @@ begin
     if FErrors.HasErrors() then
       Exit;
 
+    // Finalize module range to cover entire file
+    LModule.SetLocationEnd(FLastConsumedLoc.EndLine, FLastConsumedLoc.EndColumn);
+
+    // Success -- transfer ownership to caller
+    Result := LModule;
+    LModule := nil;
+  finally
+    LModule.Free();
+  end;
+end;
+
+{ TCPParser.ParseModuleFromString }
+function TCPParser.ParseModuleFromString(const ASource: string;
+  const AFilename: string; const AMasterAST: TCPMasterAST): TCPModuleNode;
+var
+  LModule: TCPModuleNode;
+begin
+  Result := nil;
+  FMasterAST := AMasterAST;
+
+  // Tokenize from string instead of file
+  if not FLexer.TokenizeString(ASource, AFilename) then
+    Exit;
+
+  // Prime conditional processing for the first token position
+  DoProcessConditionals();
+
+  // Create module node -- try/finally ensures cleanup on any failure path
+  LModule := TCPModuleNode.Create();
+  try
+    LModule.Location := Current().Location;
+    LModule.SourceFile := AFilename;
+
+    // module ModuleKind name;
+    Expect(tkModule);
+    LModule.ModuleKind := DoParseModuleKind();
+
+    // Set up predefined defines now that module kind is known
+    DoSetupPredefinedDefines(LModule.ModuleKind);
+
+    if Current().Kind <> tkIdentifier then
+    begin
+      FErrors.Add(Current().Location, esError, CP_ERR_PAR_008,
+        'Expected module name identifier');
+      Exit;
+    end;
+    LModule.ModuleName := Consume().TokenText;
+
+    // Expect semicolon but advance without DoProcessConditionals so that
+    // any @ifdef block in the directive section is left for DoParseDirectives
+    if Current().Kind = tkSemicolon then
+      FLexer.NextToken()
+    else
+      FLexer.Expect(tkSemicolon);
+
+    // Directives, imports, declarations
+    DoParseDirectives(LModule);
+    DoParseImportClause(LModule);
+    DoParseDeclarations(LModule);
+
+    if FErrors.HasErrors() then
+      Exit;
+
+    // Optional initialize/finalize blocks
+    DoParseInitializeBlock(LModule);
+    DoParseFinalizeBlock(LModule);
+
+    if FErrors.HasErrors() then
+      Exit;
+
+    // Main body: begin...end.
+    DoParseMainBody(LModule);
+
+    if FErrors.HasErrors() then
+      Exit;
+
+    // Test blocks after end.
+    DoParseTestBlocks(LModule);
+
+    if FErrors.HasErrors() then
+      Exit;
+
+    // Finalize module range to cover entire file
+    LModule.SetLocationEnd(FLastConsumedLoc.EndLine, FLastConsumedLoc.EndColumn);
+
     // Success -- transfer ownership to caller
     Result := LModule;
     LModule := nil;
@@ -1071,6 +1162,9 @@ begin
     Expect(tkEnd);
     Expect(tkSemicolon);
 
+    // Finalize test block range
+    LTest.SetLocationEnd(FLastConsumedLoc.EndLine, FLastConsumedLoc.EndColumn);
+
     AModule.TestBlocks.Add(LTest);
   end;
 end;
@@ -1094,6 +1188,7 @@ begin
   Expect(tkEqual);
   Result.ValueExpr := DoParseExpression();
   Expect(tkSemicolon);
+  Result.SetLocationEnd(FLastConsumedLoc.EndLine, FLastConsumedLoc.EndColumn);
 end;
 
 function TCPParser.DoParseTypeDecl(const AIsPublic: Boolean): TCPTypeDeclNode;
@@ -1109,6 +1204,7 @@ begin
   Expect(tkEqual);
   Result.TypeDef := DoParseTypeDef();
   Expect(tkSemicolon);
+  Result.SetLocationEnd(FLastConsumedLoc.EndLine, FLastConsumedLoc.EndColumn);
 end;
 
 function TCPParser.DoParseVarDecl(const AIsPublic: Boolean): TCPVarDeclNode;
@@ -1161,6 +1257,7 @@ begin
     end;
     Expect(tkSemicolon);
   end;
+  Result.SetLocationEnd(FLastConsumedLoc.EndLine, FLastConsumedLoc.EndColumn);
 end;
 
 function TCPParser.DoParseRoutineDecl(const AIsPublic: Boolean): TCPRoutineDeclNode;
@@ -1239,6 +1336,9 @@ begin
   end
   else
     DoParseRoutineBody(Result);
+
+  // Finalize routine range
+  Result.SetLocationEnd(FLastConsumedLoc.EndLine, FLastConsumedLoc.EndColumn);
 end;
 
 function TCPParser.DoParseForwardDecl(): TCPASTNode;
@@ -1992,6 +2092,7 @@ begin
     Consume();
     LAssign.ValueExpr := DoParseExpression();
     OptionalSemicolon();
+    LAssign.SetLocationEnd(FLastConsumedLoc.EndLine, FLastConsumedLoc.EndColumn);
     Result := LAssign;
   end
   else
@@ -2001,6 +2102,7 @@ begin
     LCallStmt.Location := LLeft.Location;
     LCallStmt.CallExpr := LLeft;
     OptionalSemicolon();
+    LCallStmt.SetLocationEnd(FLastConsumedLoc.EndLine, FLastConsumedLoc.EndColumn);
     Result := LCallStmt;
   end;
 end;
@@ -2031,6 +2133,7 @@ begin
 
   ExpectBlockEnd('if', Result.Location);
   OptionalSemicolon();
+  Result.SetLocationEnd(FLastConsumedLoc.EndLine, FLastConsumedLoc.EndColumn);
 end;
 
 function TCPParser.DoParseWhileStmt(): TCPWhileNode;
@@ -2051,6 +2154,7 @@ begin
 
   ExpectBlockEnd('while', Result.Location);
   OptionalSemicolon();
+  Result.SetLocationEnd(FLastConsumedLoc.EndLine, FLastConsumedLoc.EndColumn);
 end;
 
 function TCPParser.DoParseForStmt(): TCPForNode;
@@ -2090,6 +2194,7 @@ begin
 
   ExpectBlockEnd('for', Result.Location);
   OptionalSemicolon();
+  Result.SetLocationEnd(FLastConsumedLoc.EndLine, FLastConsumedLoc.EndColumn);
 end;
 
 function TCPParser.DoParseRepeatStmt(): TCPRepeatNode;
@@ -2108,6 +2213,7 @@ begin
   Expect(tkUntil);
   Result.Condition := DoParseExpression();
   OptionalSemicolon();
+  Result.SetLocationEnd(FLastConsumedLoc.EndLine, FLastConsumedLoc.EndColumn);
 end;
 
 function TCPParser.DoParseMatchStmt(): TCPMatchNode;
@@ -2135,6 +2241,7 @@ begin
 
   ExpectBlockEnd('match', Result.Location);
   OptionalSemicolon();
+  Result.SetLocationEnd(FLastConsumedLoc.EndLine, FLastConsumedLoc.EndColumn);
 end;
 
 function TCPParser.DoParseMatchArm(): TCPMatchArmNode;
@@ -2238,6 +2345,7 @@ begin
 
   ExpectBlockEnd('guard', Result.Location);
   OptionalSemicolon();
+  Result.SetLocationEnd(FLastConsumedLoc.EndLine, FLastConsumedLoc.EndColumn);
 end;
 
 function TCPParser.DoParseThrowStmt(): TCPASTNode;
@@ -2792,6 +2900,7 @@ begin
         Consume();  // consume (
         LCast.Expr := DoParseExpression();
         Expect(tkRParen);
+        LCast.SetLocationEnd(FLastConsumedLoc.EndLine, FLastConsumedLoc.EndColumn);
         LResult := LCast;
       end
       // Regular function call
@@ -2808,6 +2917,7 @@ begin
             LCall.Args.Add(DoParseExpression());
         end;
         Expect(tkRParen);
+        LCall.SetLocationEnd(FLastConsumedLoc.EndLine, FLastConsumedLoc.EndColumn);
         LResult := LCall;
       end;
     end
