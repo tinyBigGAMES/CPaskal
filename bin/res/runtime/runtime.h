@@ -1,12 +1,12 @@
 /*******************************************************************************
- * runtime.h - LangVM C++ Runtime
+ * runtime.h - CPaskal C++ Runtime
  *
- * Copyright © 2025-present tinyBigGAMES™ LLC
+ * Copyright © 2026-present tinyBigGAMES™ LLC
  * All Rights Reserved.
  *
- * https://langvm.org
+ * https://cpaskal.org
  *
- * Minimal C++ runtime support for LangVM language features.
+ * Minimal C++ runtime support for CPaskal language features.
  ******************************************************************************/
 
 #ifndef RT_RUNTIME_H
