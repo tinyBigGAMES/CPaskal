@@ -37,6 +37,10 @@ This bidirectional interop is what sets CPaskal apart. It is not just a consumer
 
 ![CPaskal Infographic](media/Infographic.jpg)
 
+
+https://github.com/user-attachments/assets/a3860bc1-e7bb-4943-ba6d-4d25faaffda1
+
+
 <!-- VIDEO: paste the GitHub user-attachments URL here -->
 
 </div>
