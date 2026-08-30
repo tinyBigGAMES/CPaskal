@@ -134,11 +134,6 @@
         <DCCReference Include="..\..\src\CPaskal.Codegen.pas"/>
         <DCCReference Include="..\..\src\CPaskal.Common.pas"/>
         <DCCReference Include="..\..\src\CPaskal.Compiler.pas"/>
-        <DCCReference Include="..\..\src\CPaskal.Lexer.pas"/>
-        <DCCReference Include="..\..\src\CPaskal.Parser.pas"/>
-        <DCCReference Include="..\..\src\CPaskal.Semantics.pas"/>
-        <DCCReference Include="..\..\src\CPaskal.ZigBuild.pas"/>
-        <DCCReference Include="..\..\src\CPaskal.ZigBuild.Targets.pas"/>
         <DCCReference Include="..\..\src\CPaskal.Debug.Client.pas"/>
         <DCCReference Include="..\..\src\CPaskal.Debug.DAP.pas"/>
         <DCCReference Include="..\..\src\CPaskal.Debug.PDB.pas"/>
@@ -146,8 +141,14 @@
         <DCCReference Include="..\..\src\CPaskal.Debug.Runtime.pas"/>
         <DCCReference Include="..\..\src\CPaskal.Debug.Server.pas"/>
         <DCCReference Include="..\..\src\CPaskal.Debug.Target.pas"/>
-        <DCCReference Include="..\..\src\StdApp.Resources.pas"/>
+        <DCCReference Include="..\..\src\CPaskal.Lexer.pas"/>
         <DCCReference Include="..\..\src\CPaskal.LSP.pas"/>
+        <DCCReference Include="..\..\src\CPaskal.Parser.pas"/>
+        <DCCReference Include="..\..\src\CPaskal.Script.pas"/>
+        <DCCReference Include="..\..\src\CPaskal.Semantics.pas"/>
+        <DCCReference Include="..\..\src\CPaskal.ZigBuild.pas"/>
+        <DCCReference Include="..\..\src\CPaskal.ZigBuild.Targets.pas"/>
+        <DCCReference Include="..\..\src\StdApp.Resources.pas"/>
         <BuildConfiguration Include="Base">
             <Key>Base</Key>
         </BuildConfiguration>

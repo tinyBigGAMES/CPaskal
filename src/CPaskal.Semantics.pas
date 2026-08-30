@@ -107,7 +107,7 @@ type
     procedure PopScope();
 
     // Module processing
-    procedure DoAnalyzeModule(const AModule: TCPModuleNode);
+    procedure DoAnalyzeModule(const AModule: TCPModuleNode); virtual;
 
     // Declaration analysis
     procedure DoAnalyzeDeclaration(const ANode: TCPASTNode);
@@ -198,7 +198,7 @@ type
   public
     constructor Create(); override;
     destructor Destroy(); override;
-    procedure Analyze(const AMasterAST: TCPMasterAST);
+    procedure Analyze(const AMasterAST: TCPMasterAST); virtual;
   end;
 
 

@@ -76,9 +76,7 @@ type
     procedure DoSetupPredefinedDefines(const AModuleKind: TCPModuleKind);
 
     // Token helpers
-    function Current(): TCPToken;
     function PeekAt(const AOffset: Int64): TCPToken;
-    function Consume(): TCPToken;
     function Match(const AKind: TCPTokenKind): Boolean;
     function Expect(const AKind: TCPTokenKind): TCPToken;
     function Check(const AKind: TCPTokenKind): Boolean;
@@ -97,7 +95,6 @@ type
     function TokenToAssignOp(const AKind: TCPTokenKind): TCPAssignOp;
 
     // Module structure
-    function DoParseModuleKind(): TCPModuleKind;
     procedure DoParseDirectives(const AModule: TCPModuleNode);
     procedure DoParseImportClause(const AModule: TCPModuleNode);
     procedure DoParseDeclarations(const AModule: TCPModuleNode);
@@ -162,6 +159,11 @@ type
     function DoParseIntrinsic(const AKind: TCPIntrinsicKind): TCPIntrinsicExprNode;
     function IsIntrinsicToken(const AKind: TCPTokenKind): Boolean;
     function TokenToIntrinsicKind(const AKind: TCPTokenKind): TCPIntrinsicKind;
+
+  protected
+    function Current(): TCPToken;
+    function Consume(): TCPToken;
+    function DoParseModuleKind(): TCPModuleKind; virtual;
 
   public
     constructor Create(); override;

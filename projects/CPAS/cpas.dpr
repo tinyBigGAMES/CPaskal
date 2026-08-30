@@ -25,11 +25,6 @@ uses
   CPaskal.Codegen in '..\..\src\CPaskal.Codegen.pas',
   CPaskal.Common in '..\..\src\CPaskal.Common.pas',
   CPaskal.Compiler in '..\..\src\CPaskal.Compiler.pas',
-  CPaskal.Lexer in '..\..\src\CPaskal.Lexer.pas',
-  CPaskal.Parser in '..\..\src\CPaskal.Parser.pas',
-  CPaskal.Semantics in '..\..\src\CPaskal.Semantics.pas',
-  CPaskal.ZigBuild in '..\..\src\CPaskal.ZigBuild.pas',
-  CPaskal.ZigBuild.Targets in '..\..\src\CPaskal.ZigBuild.Targets.pas',
   CPaskal.Debug.Client in '..\..\src\CPaskal.Debug.Client.pas',
   CPaskal.Debug.DAP in '..\..\src\CPaskal.Debug.DAP.pas',
   CPaskal.Debug.PDB in '..\..\src\CPaskal.Debug.PDB.pas',
@@ -37,8 +32,14 @@ uses
   CPaskal.Debug.Runtime in '..\..\src\CPaskal.Debug.Runtime.pas',
   CPaskal.Debug.Server in '..\..\src\CPaskal.Debug.Server.pas',
   CPaskal.Debug.Target in '..\..\src\CPaskal.Debug.Target.pas',
-  StdApp.Resources in '..\..\src\StdApp.Resources.pas',
-  CPaskal.LSP in '..\..\src\CPaskal.LSP.pas';
+  CPaskal.Lexer in '..\..\src\CPaskal.Lexer.pas',
+  CPaskal.LSP in '..\..\src\CPaskal.LSP.pas',
+  CPaskal.Parser in '..\..\src\CPaskal.Parser.pas',
+  CPaskal.Script in '..\..\src\CPaskal.Script.pas',
+  CPaskal.Semantics in '..\..\src\CPaskal.Semantics.pas',
+  CPaskal.ZigBuild in '..\..\src\CPaskal.ZigBuild.pas',
+  CPaskal.ZigBuild.Targets in '..\..\src\CPaskal.ZigBuild.Targets.pas',
+  StdApp.Resources in '..\..\src\StdApp.Resources.pas';
 
 begin
   RunCLI();
