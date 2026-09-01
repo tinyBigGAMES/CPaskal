@@ -128,7 +128,7 @@ begin
     '<source>' + COLOR_RESET + ' [OPTIONS]');
   TConsole.PrintLn('');
   TConsole.PrintLn(COLOR_BOLD + 'SUBCOMMANDS:');
-  TConsole.PrintLn('  ' + COLOR_CYAN + 'cimport <script.cis>   ' + COLOR_RESET +
+  TConsole.PrintLn('  ' + COLOR_CYAN + 'cimport <script.cps>   ' + COLOR_RESET +
     '  Run a C import script to generate bindings');
   TConsole.PrintLn('');
   TConsole.PrintLn(COLOR_BOLD + 'REQUIRED:');
@@ -300,7 +300,7 @@ begin
           TConsole.PrintLn('');
           TConsole.PrintLn(COLOR_BOLD + 'USAGE:');
           TConsole.PrintLn('  ' + TPath.GetFileNameWithoutExtension(ParamStr(0)) +
-            ' ' + COLOR_CYAN + 'cimport <script.cis>' + COLOR_RESET);
+            ' ' + COLOR_CYAN + 'cimport <script.cps>' + COLOR_RESET);
           TConsole.PrintLn('');
           ExitCode := 2;
           Result := False;
@@ -313,8 +313,8 @@ begin
         end
         else
         begin
-          if not FCImportFile.EndsWith('.cis', True) then
-            FCImportFile := FCImportFile + '.cis';
+          if not FCImportFile.EndsWith('.cps', True) then
+            FCImportFile := FCImportFile + '.cps';
           if not TFile.Exists(FCImportFile) then
           begin
             TConsole.PrintLn(COLOR_RED +

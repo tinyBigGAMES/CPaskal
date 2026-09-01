@@ -273,6 +273,9 @@ type
   public
     constructor Create(); override;
     destructor Destroy(); override;
+    procedure SetErrors(const AErrors: TErrors); override;
+    procedure SetStatusCallback(const ACallback: TStatusCallback;
+      const AUserData: Pointer = nil); override;
     procedure SetExtension(const AExt: string);
     procedure SetPrintCallback(const ACallback: TCPScriptPrintCallback;
       const AUserData: Pointer = nil);
@@ -1996,6 +1999,33 @@ begin
   FParser.Free();
 
   inherited;
+end;
+
+{ TCPScriptEngine.SetErrors }
+procedure TCPScriptEngine.SetErrors(const AErrors: TErrors);
+begin
+  inherited SetErrors(AErrors);
+
+  if FParser <> nil then
+    FParser.SetErrors(AErrors);
+  if FSemantics <> nil then
+    FSemantics.SetErrors(AErrors);
+  if FInterpreter <> nil then
+    FInterpreter.SetErrors(AErrors);
+end;
+
+{ TCPScriptEngine.SetStatusCallback }
+procedure TCPScriptEngine.SetStatusCallback(const ACallback: TStatusCallback;
+  const AUserData: Pointer);
+begin
+  inherited SetStatusCallback(ACallback, AUserData);
+
+  if FParser <> nil then
+    FParser.SetStatusCallback(ACallback, AUserData);
+  if FSemantics <> nil then
+    FSemantics.SetStatusCallback(ACallback, AUserData);
+  if FInterpreter <> nil then
+    FInterpreter.SetStatusCallback(ACallback, AUserData);
 end;
 
 procedure TCPScriptEngine.SetExtension(const AExt: string);
